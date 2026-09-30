@@ -1,59 +1,91 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { motion, useReducedMotion } from "framer-motion";
-import { CaretLeft, X, Plus, Check } from "@phosphor-icons/react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CaretLeft, X, Plus, Check, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   getWorkout,
-  listExercises,
+  loadExercises,
   addSet,
   removeSet,
   finishWorkout,
+  getLastSetFor,
+  subscribeSets,
   type Workout,
   type WorkoutSet,
   type Exercise,
 } from "../lib/data";
+import { useAuthUser } from "../hooks/useAuthUser";
 
 export default function ActiveWorkout() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const reduce = useReducedMotion();
+  const user = useAuthUser();
 
   const [workout, setWorkout] = useState<(Workout & { sets: WorkoutSet[] }) | null>(
     null
   );
+  const [liveSets, setLiveSets] = useState<WorkoutSet[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
 
-  const [exerciseName, setExerciseName] = useState("");
-  const [weight, setWeight] = useState("");
-  const [reps, setReps] = useState("");
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Exercise | null>(null);
+  const [weight, setWeight] = useState("");
+  const [reps, setReps] = useState("");
+  const [prefilling, setPrefilling] = useState(false);
 
+  // Load workout + exercise catalog once
   useEffect(() => {
     if (!id) return;
     getWorkout(id).then((w) => w && setWorkout(w));
-    listExercises().then(setExercises);
+    loadExercises().then(setExercises);
   }, [id]);
 
-  const filtered = useMemo(
-    () =>
-      exercises.filter((e) =>
-        e.name.toLowerCase().includes(search.toLowerCase())
-      ),
-    [exercises, search]
-  );
+  // Realtime sets — updates the moment a set is added from any device
+  useEffect(() => {
+    if (!id) return;
+    return subscribeSets(id, setLiveSets);
+  }, [id]);
+
+  const sets = liveSets.length > 0 ? liveSets : (workout?.sets ?? []);
 
   const grouped = useMemo(() => {
     const map = new Map<string, WorkoutSet[]>();
-    for (const s of workout?.sets ?? []) {
+    for (const s of sets) {
       const arr = map.get(s.exerciseName) ?? [];
       arr.push(s);
       map.set(s.exerciseName, arr);
     }
     return [...map.entries()];
-  }, [workout]);
+  }, [sets]);
 
-  if (!workout) {
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return exercises.slice(0, 40);
+    return exercises
+      .filter((e) => e.name.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [exercises, search]);
+
+  const chooseExercise = async (ex: Exercise) => {
+    setSelected(ex);
+    setPicker(false);
+    setSearch("");
+    setWeight("");
+    setReps("");
+    // Prefill from personal best
+    if (user) {
+      setPrefilling(true);
+      const last = await getLastSetFor(user.uid, ex.name);
+      if (last) {
+        setWeight(String(last.weight));
+        setReps(String(last.reps));
+      }
+      setPrefilling(false);
+    }
+  };
+
+  if (!workout && liveSets.length === 0) {
     return (
       <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
         <div className="h-9 w-44 animate-pulse rounded-xl bg-[var(--fill)]" />
@@ -62,23 +94,12 @@ export default function ActiveWorkout() {
     );
   }
 
-  const refresh = async () => {
-    if (!id) return;
-    const w = await getWorkout(id);
-    if (w) setWorkout(w);
-  };
+  const name = workout?.name ?? "Workout";
 
   const add = async () => {
-    if (!id || !exerciseName || !weight || !reps) return;
-    await addSet(id, exerciseName, parseFloat(weight), parseInt(reps, 10));
-    setReps("");
-    await refresh();
-  };
-
-  const remove = async (setId: string) => {
-    if (!id) return;
-    await removeSet(id, setId);
-    await refresh();
+    if (!id || !selected || !weight || !reps) return;
+    await addSet(id, selected.name, parseFloat(weight), parseInt(reps, 10));
+    // Keep last values for the next set — bumping weight is usually all you change
   };
 
   const finish = async () => {
@@ -88,7 +109,7 @@ export default function ActiveWorkout() {
   };
 
   return (
-    <div className="min-h-[100dvh] px-5 pb-40 pt-[max(env(safe-area-inset-top),24px)]">
+    <div className="min-h-[100dvh] px-5 pb-44 pt-[max(env(safe-area-inset-top),24px)]">
       <header className="flex items-center justify-between">
         <button
           onClick={() => navigate("/app")}
@@ -105,90 +126,87 @@ export default function ActiveWorkout() {
         </button>
       </header>
 
-      <h1 className="mt-5 text-[30px] font-bold tracking-[-0.02em]">
-        {workout.name}
-      </h1>
+      <h1 className="mt-5 text-[30px] font-bold tracking-[-0.02em]">{name}</h1>
       <p className="label mt-1 normal-case">
-        {workout.sets.length} {workout.sets.length === 1 ? "set" : "sets"} logged
+        {sets.length} {sets.length === 1 ? "set" : "sets"} · updates live
       </p>
 
       <div className="mt-7 flex flex-col gap-4">
-        {grouped.map(([name, sets]) => (
-          <motion.div
-            key={name}
-            {...(reduce
-              ? {}
-              : {
-                  initial: { opacity: 0, y: 10 },
-                  animate: { opacity: 1, y: 0 },
-                  transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as const },
-                })}
-            className="panel p-4"
-          >
+        {grouped.map(([exName, exSets]) => (
+          <div key={exName} className="panel p-4">
             <div className="flex items-baseline justify-between">
-              <h3 className="text-[16px] font-semibold">{name}</h3>
-              <span className="label">{sets.length} sets</span>
+              <h3 className="text-[16px] font-semibold">{exName}</h3>
+              <span className="label">{exSets.length} sets</span>
             </div>
             <div className="mt-3 flex flex-col gap-1.5">
-              {sets.map((s, i) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded-xl bg-[var(--fill)] px-4"
-                  style={{ height: 48 }}
-                >
-                  <span className="label w-6">{i + 1}</span>
-                  <span className="num text-[17px] font-semibold">
-                    {s.weight}
-                    <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
-                      kg
-                    </span>
-                    <span className="mx-2 text-[var(--ink-3)]">×</span>
-                    {s.reps}
-                    <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
-                      reps
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => remove(s.id)}
-                    className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
-                    aria-label="Remove set"
+              <AnimatePresence initial={false}>
+                {exSets.map((s, i) => (
+                  <motion.div
+                    key={s.id}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 48 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="flex items-center justify-between overflow-hidden rounded-xl bg-[var(--fill)] px-4"
                   >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
+                    <span className="label w-6">{i + 1}</span>
+                    <span className="num text-[17px] font-semibold">
+                      {s.weight}
+                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">kg</span>
+                      <span className="mx-2 text-[var(--ink-3)]">×</span>
+                      {s.reps}
+                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">reps</span>
+                    </span>
+                    <button
+                      onClick={() => id && removeSet(id, s.id)}
+                      className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+                      aria-label="Remove set"
+                    >
+                      <X size={15} />
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
+      {/* Sticky logging bar */}
       <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5">
-        <div className="panel mx-auto w-full max-w-md p-3 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+        <div className="panel mx-auto w-full max-w-md p-3 shadow-[var(--shadow-panel)]">
           {picker ? (
             <div>
-              <input
-                autoFocus
-                className="field"
-                placeholder="Search exercises"
-                enterKeyHint="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <div className="relative">
+                <MagnifyingGlass
+                  size={16}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
+                />
+                <input
+                  autoFocus
+                  className="field pl-10"
+                  placeholder="Search 876 exercises"
+                  enterKeyHint="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
               <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
                 {filtered.map((e) => (
                   <button
                     key={e.id}
-                    onClick={() => {
-                      setExerciseName(e.name);
-                      setPicker(false);
-                      setSearch("");
-                    }}
+                    onClick={() => chooseExercise(e)}
                     className="tab flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors active:bg-[var(--fill)]"
                   >
-                    <span>{e.name}</span>
-                    <span className="label">{e.muscleGroup}</span>
+                    <span className="truncate">{e.name}</span>
+                    <span className="label ml-2 shrink-0">{e.muscleGroup}</span>
                   </button>
                 ))}
+                {filtered.length === 0 && (
+                  <p className="py-6 text-center text-[14px] text-[var(--ink-3)]">
+                    No exercises match “{search}”
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -199,18 +217,20 @@ export default function ActiveWorkout() {
                 style={{ height: 44 }}
               >
                 <span
-                  className={`text-[15px] ${exerciseName ? "font-medium" : "text-[var(--ink-3)]"}`}
+                  className={`truncate pr-2 text-[15px] ${selected ? "font-medium" : "text-[var(--ink-3)]"}`}
                 >
-                  {exerciseName || "Choose exercise"}
+                  {selected ? selected.name : "Choose exercise"}
                 </span>
-                <span className="text-[13px] font-medium">Change</span>
+                <span className="label ml-2 shrink-0">
+                  {selected?.muscleGroup ?? "Tap to pick"}
+                </span>
               </button>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <input
                   className="field num"
                   type="number"
                   inputMode="decimal"
-                  placeholder="kg"
+                  placeholder={prefilling ? "…" : "kg"}
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                 />
@@ -218,16 +238,16 @@ export default function ActiveWorkout() {
                   className="field num"
                   type="number"
                   inputMode="numeric"
-                  placeholder="reps"
+                  placeholder={prefilling ? "…" : "reps"}
                   value={reps}
                   onChange={(e) => setReps(e.target.value)}
                 />
               </div>
               <button
                 className="btn-solid mt-2 w-full"
-                disabled={!exerciseName || !weight || !reps}
+                disabled={!selected || !weight || !reps}
                 style={
-                  exerciseName && weight && reps ? undefined : { opacity: 0.4 }
+                  selected && weight && reps ? undefined : { opacity: 0.4 }
                 }
                 onClick={add}
               >

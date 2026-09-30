@@ -1,24 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trash } from "@phosphor-icons/react";
-import ThemeToggle from "../components/ThemeToggle";
-import { listWorkouts, deleteWorkout, type Workout } from "../lib/data";
+import {
+  subscribeWorkouts,
+  subscribeSets,
+  deleteWorkout,
+  type Workout,
+} from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function History() {
   const user = useAuthUser();
   const [workouts, setWorkouts] = useState<Workout[] | null>(null);
+  const [setsCount, setSetsCount] = useState<Map<string, number>>(new Map());
   const navigate = useNavigate();
 
-  const refresh = async () => {
-    if (!user) return;
-    setWorkouts(await listWorkouts(user.uid));
-  };
-
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!user) return;
+    const unsub = subscribeWorkouts(user.uid, (list) =>
+      setWorkouts(list.filter((w) => w.completed))
+    );
+    return unsub;
   }, [user]);
+
+  // Live set counts for shown workouts
+  const completed = useMemo(() => workouts ?? [], [workouts]);
+  const completedIds = useMemo(
+    () => completed.slice(0, 20).map((w) => w.id).join(","),
+    [completed]
+  );
+  useEffect(() => {
+    if (!user || !completedIds) return;
+    const ids = completedIds.split(",");
+    const unsubs = ids.map((wid) =>
+      subscribeSets(wid, (sets) => {
+        setSetsCount((prev) => new Map(prev).set(wid, sets.length));
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [user, completedIds]);
 
   if (workouts === null) {
     return (
@@ -32,8 +53,6 @@ export default function History() {
       </div>
     );
   }
-
-  const completed = workouts.filter((w) => w.completed);
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
@@ -49,7 +68,7 @@ export default function History() {
         <div className="panel mt-8 flex flex-col items-center px-6 py-12 text-center">
           <span className="num text-[40px] font-bold text-[var(--ink-3)]">0</span>
           <p className="mt-3 max-w-[24ch] text-[15px] text-[var(--ink-2)]">
-            No sessions logged yet. Your first workout is one tap away.
+            No sessions yet. Pick a quick start on Today and log your first set.
           </p>
         </div>
       ) : (
@@ -61,13 +80,13 @@ export default function History() {
                 onClick={() => navigate(`/app/workout/${w.id}`)}
               >
                 <p className="text-[15px] font-medium">{w.name}</p>
-                <p className="label mt-0.5 normal-case">{w.date}</p>
+                <p className="label mt-0.5 normal-case">
+                  {w.date}
+                  {setsCount.has(w.id) ? ` · ${setsCount.get(w.id)} sets` : ""}
+                </p>
               </button>
               <button
-                onClick={async () => {
-                  await deleteWorkout(w.id);
-                  await refresh();
-                }}
+                onClick={() => deleteWorkout(w.id)}
                 className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
                 aria-label="Delete workout"
               >

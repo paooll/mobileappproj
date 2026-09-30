@@ -1,19 +1,51 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SignOut } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
-import { signOut, getStats, type Stats } from "../lib/data";
+import {
+  signOut,
+  subscribeWorkouts,
+  subscribeSets,
+  computeStats,
+  type Workout,
+  type WorkoutSet,
+} from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 
 export default function Profile() {
   const user = useAuthUser();
-  const [stats, setStats] = useState<Stats | null>(null);
   const navigate = useNavigate();
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [setsByWorkout, setSetsByWorkout] = useState<Map<string, WorkoutSet[]>>(
+    new Map()
+  );
 
   useEffect(() => {
     if (!user) return;
-    getStats(user.uid).then(setStats);
-  }, [user]);
+    const unsubWorkouts = subscribeWorkouts(user.uid, setWorkouts);
+    const unsubs: Array<() => void> = [];
+    // Subscribe to sets of the 10 most recent completed workouts for live stats
+    const completedIds = workouts
+      .filter((w) => w.completed)
+      .slice(0, 10)
+      .map((w) => w.id);
+    for (const wid of completedIds) {
+      unsubs.push(
+        subscribeSets(wid, (sets) =>
+          setSetsByWorkout((prev) => new Map(prev).set(wid, sets))
+        )
+      );
+    }
+    return () => {
+      unsubWorkouts();
+      unsubs.forEach((u) => u());
+    };
+  }, [user, workouts.filter((w) => w.completed).slice(0, 10).map((w) => w.id).join(",")]);
+
+  const stats = useMemo(
+    () => computeStats(workouts, setsByWorkout),
+    [workouts, setsByWorkout]
+  );
 
   const doSignOut = async () => {
     await signOut();
@@ -41,22 +73,20 @@ export default function Profile() {
         </div>
         <div className="mt-5 grid grid-cols-3 divide-x divide-[var(--line)] border-t border-[var(--line)] pt-4 text-center">
           <div>
-            <p className="num text-[20px] font-semibold">{stats?.streak ?? 0}</p>
+            <p className="num text-[20px] font-semibold">{stats.streak}</p>
             <p className="label mt-0.5">Streak</p>
           </div>
           <div>
             <p className="num text-[20px] font-semibold">
-              {stats?.totalWorkouts ?? 0}
+              {stats.totalWorkouts}
             </p>
             <p className="label mt-0.5">Workouts</p>
           </div>
           <div>
             <p className="num text-[20px] font-semibold">
-              {stats
-                ? stats.totalVolume >= 1000
-                  ? `${(stats.totalVolume / 1000).toFixed(1)}t`
-                  : `${stats.totalVolume}`
-                : 0}
+              {stats.totalVolume >= 1000
+                ? `${(stats.totalVolume / 1000).toFixed(1)}t`
+                : `${stats.totalVolume}`}
             </p>
             <p className="label mt-0.5">Volume</p>
           </div>

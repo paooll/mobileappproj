@@ -13,13 +13,18 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   limit,
   setDoc,
   deleteDoc,
+  onSnapshot,
   serverTimestamp,
+  orderBy,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
+import { ensureExerciseCatalog, type Exercise } from "./exerciseDb";
+
+export type { Exercise };
 
 /* ---------- Types ---------- */
 
@@ -40,18 +45,17 @@ export interface WorkoutSet {
   order: number;
 }
 
-export interface Exercise {
-  id: string;
-  name: string;
-  muscleGroup: string;
-  equipment: string;
-}
-
 export interface Stats {
   totalWorkouts: number;
   totalSets: number;
   totalVolume: number;
   streak: number;
+  weekWorkouts: number;
+}
+
+export interface PersonalRecord {
+  weight: number;
+  date: string;
 }
 
 /* ---------- Auth ---------- */
@@ -72,61 +76,63 @@ export async function signOut() {
   return fbSignOut(auth);
 }
 
-/* ---------- Exercise catalog ---------- */
+/* ---------- Exercises ---------- */
 
-const CATALOG: [string, string, string][] = [
-  ["Bench Press", "Chest", "Barbell"],
-  ["Incline Dumbbell Press", "Chest", "Dumbbell"],
-  ["Push-Up", "Chest", "Bodyweight"],
-  ["Cable Fly", "Chest", "Cable"],
-  ["Deadlift", "Back", "Barbell"],
-  ["Barbell Row", "Back", "Barbell"],
-  ["Lat Pulldown", "Back", "Cable"],
-  ["Pull-Up", "Back", "Bodyweight"],
-  ["Overhead Press", "Shoulders", "Barbell"],
-  ["Lateral Raise", "Shoulders", "Dumbbell"],
-  ["Face Pull", "Shoulders", "Cable"],
-  ["Squat", "Legs", "Barbell"],
-  ["Leg Press", "Legs", "Machine"],
-  ["Romanian Deadlift", "Legs", "Barbell"],
-  ["Lunge", "Legs", "Dumbbell"],
-  ["Leg Curl", "Legs", "Machine"],
-  ["Calf Raise", "Legs", "Machine"],
-  ["Barbell Curl", "Arms", "Barbell"],
-  ["Hammer Curl", "Arms", "Dumbbell"],
-  ["Tricep Pushdown", "Arms", "Cable"],
-  ["Skullcrusher", "Arms", "Barbell"],
-  ["Plank", "Core", "Bodyweight"],
-  ["Hanging Leg Raise", "Core", "Bodyweight"],
-  ["Cable Crunch", "Core", "Cable"],
-  ["Russian Twist", "Core", "Bodyweight"],
-];
-
-/** Idempotent: fills the catalog doc once per project. */
-export async function ensureExerciseCatalog() {
-  const metaRef = doc(db, "meta", "exerciseCatalog");
-  const meta = await getDoc(metaRef);
-  if (meta.exists()) return;
-  const batch = [...CATALOG.map(async ([name, muscleGroup, equipment]) => {
-    await addDoc(collection(db, "exercises"), { name, muscleGroup, equipment });
-  })];
-  await Promise.all(batch);
-  await setDoc(metaRef, { seeded: true });
+export async function loadExercises(): Promise<Exercise[]> {
+  return ensureExerciseCatalog();
 }
 
-export async function listExercises(): Promise<Exercise[]> {
-  const snap = await getDocs(collection(db, "exercises"));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Exercise);
+/* ---------- Workouts: realtime ---------- */
+
+export function subscribeActiveWorkout(
+  userId: string,
+  cb: (w: Workout | null) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, "workouts"),
+    where("userId", "==", userId),
+    where("completed", "==", false),
+    limit(1)
+  );
+  return onSnapshot(q, (snap) => {
+    cb(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as Workout));
+  });
 }
 
-/* ---------- Workouts ---------- */
+export function subscribeWorkouts(
+  userId: string,
+  cb: (workouts: Workout[]) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, "workouts"),
+    where("userId", "==", userId)
+  );
+  return onSnapshot(q, (snap) => {
+    const workouts = snap.docs.map(
+      (d) => ({ id: d.id, ...d.data() }) as Workout
+    );
+    workouts.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+    cb(workouts);
+  });
+}
+
+export function subscribeSets(
+  workoutId: string,
+  cb: (sets: WorkoutSet[]) => void
+): Unsubscribe {
+  const q = query(collection(db, "workouts", workoutId, "sets"), orderBy("order"));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkoutSet));
+  });
+}
+
+/* ---------- Workout actions ---------- */
 
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 export async function startWorkout(userId: string, name: string): Promise<string> {
-  // Resume if an unfinished workout exists
   const activeSnap = await getDocs(
     query(
       collection(db, "workouts"),
@@ -147,9 +153,10 @@ export async function startWorkout(userId: string, name: string): Promise<string
   return ref.id;
 }
 
-export async function getWorkout(id: string): Promise<(Workout & { sets: WorkoutSet[] }) | null> {
-  const ref = doc(db, "workouts", id);
-  const snap = await getDoc(ref);
+export async function getWorkout(
+  id: string
+): Promise<(Workout & { sets: WorkoutSet[] }) | null> {
+  const snap = await getDoc(doc(db, "workouts", id));
   if (!snap.exists()) return null;
   const data = snap.data() as Omit<Workout, "id">;
   const setsSnap = await getDocs(
@@ -157,30 +164,6 @@ export async function getWorkout(id: string): Promise<(Workout & { sets: Workout
   );
   const sets = setsSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkoutSet);
   return { id: snap.id, ...data, sets };
-}
-
-export async function listWorkouts(userId: string): Promise<Workout[]> {
-  const snap = await getDocs(
-    query(collection(db, "workouts"), where("userId", "==", userId))
-  );
-  const workouts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workout);
-  // Newest first (avoids a composite index requirement)
-  workouts.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
-  return workouts;
-}
-
-export async function getActiveWorkout(userId: string): Promise<Workout | null> {
-  const snap = await getDocs(
-    query(
-      collection(db, "workouts"),
-      where("userId", "==", userId),
-      where("completed", "==", false),
-      limit(1)
-    )
-  );
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, ...d.data() } as Workout;
 }
 
 export async function addSet(
@@ -217,21 +200,56 @@ export async function deleteWorkout(workoutId: string) {
   await deleteDoc(doc(db, "workouts", workoutId));
 }
 
-export async function getStats(userId: string): Promise<Stats> {
-  const workouts = await listWorkouts(userId);
+/* ---------- Last-set memory: prefill weight/reps per exercise ---------- */
+
+export async function getLastSetFor(
+  userId: string,
+  exerciseName: string
+): Promise<{ weight: number; reps: number } | null> {
+  const workoutsSnap = await getDocs(
+    query(collection(db, "workouts"), where("userId", "==", userId))
+  );
+  const completedIds = workoutsSnap.docs
+    .filter((d) => d.data().completed)
+    .map((d) => d.id);
+  if (completedIds.length === 0) return null;
+
+  let best: { weight: number; reps: number } | null = null;
+  // Check the 8 most recent workouts for this exercise
+  for (const wid of completedIds.slice(0, 8)) {
+    const setsSnap = await getDocs(collection(db, "workouts", wid, "sets"));
+    for (const d of setsSnap.docs) {
+      const s = d.data() as { exerciseName: string; weight: number; reps: number };
+      if (s.exerciseName === exerciseName) {
+        if (!best || s.weight > best.weight) best = { weight: s.weight, reps: s.reps };
+      }
+    }
+  }
+  return best;
+}
+
+/* ---------- Personal record for an exercise ---------- */
+
+export async function getPersonalRecord(
+  userId: string,
+  exerciseName: string
+): Promise<{ weight: number; reps: number } | null> {
+  return getLastSetFor(userId, exerciseName); // same lookup: heaviest set
+}
+
+/* ---------- Stats ---------- */
+
+export function computeStats(workouts: Workout[], setsByWorkout: Map<string, WorkoutSet[]>): Stats {
   const completed = workouts.filter((w) => w.completed);
   let totalSets = 0;
   let totalVolume = 0;
-  await Promise.all(
-    completed.map(async (w) => {
-      const setsSnap = await getDocs(collection(db, "workouts", w.id, "sets"));
-      for (const d of setsSnap.docs) {
-        const s = d.data() as { weight: number; reps: number };
-        totalSets += 1;
-        totalVolume += s.weight * s.reps;
-      }
-    })
-  );
+  for (const w of completed) {
+    const sets = setsByWorkout.get(w.id) ?? [];
+    for (const s of sets) {
+      totalSets += 1;
+      totalVolume += s.weight * s.reps;
+    }
+  }
   const dates = new Set(completed.map((w) => w.date));
   let streak = 0;
   const d = new Date();
@@ -240,10 +258,24 @@ export async function getStats(userId: string): Promise<Stats> {
     streak += 1;
     d.setDate(d.getDate() - 1);
   }
-  return {
-    totalWorkouts: completed.length,
-    totalSets,
-    totalVolume,
-    streak,
-  };
+  // Workouts in the last 7 days
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekWorkouts = completed.filter((w) => new Date(w.date) >= weekAgo).length;
+
+  return { totalWorkouts: completed.length, totalSets, totalVolume, streak, weekWorkouts };
 }
+
+/* ---------- Workout templates: one-tap start ---------- */
+
+export interface Template {
+  name: string;
+  exercises: string[];
+}
+
+export const TEMPLATES: Template[] = [
+  { name: "Push Day", exercises: ["Bench Press", "Overhead Press", "Triceps Pushdown"] },
+  { name: "Pull Day", exercises: ["Deadlift", "Lat Pulldown", "Barbell Curl"] },
+  { name: "Leg Day", exercises: ["Squat", "Leg Press", "Leg Curl"] },
+  { name: "Full Body", exercises: ["Squat", "Bench Press", "Barbell Row"] },
+];
