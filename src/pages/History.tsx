@@ -8,6 +8,7 @@ import {
   type Workout,
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
+import { useToast } from "../components/Toast";
 import ThemeToggle from "../components/ThemeToggle";
 
 export default function History() {
@@ -15,6 +16,19 @@ export default function History() {
   const [workouts, setWorkouts] = useState<Workout[] | null>(null);
   const [setsCount, setSetsCount] = useState<Map<string, number>>(new Map());
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const remove = async (id: string) => {
+    if (!window.confirm("Delete this workout and all its sets? This can't be undone."))
+      return;
+    try {
+      await deleteWorkout(id);
+      toast("Workout deleted.", "success");
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't delete the workout. Try again.", "error");
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -86,7 +100,7 @@ export default function History() {
                 </p>
               </button>
               <button
-                onClick={() => deleteWorkout(w.id)}
+                onClick={() => remove(w.id)}
                 className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
                 aria-label="Delete workout"
               >

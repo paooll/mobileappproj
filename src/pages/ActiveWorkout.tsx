@@ -15,6 +15,7 @@ import {
   type Exercise,
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
+import { useToast } from "../components/Toast";
 
 export default function ActiveWorkout() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +34,7 @@ export default function ActiveWorkout() {
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [prefilling, setPrefilling] = useState(false);
+  const { toast } = useToast();
 
   // Load workout + exercise catalog once
   useEffect(() => {
@@ -97,15 +99,32 @@ export default function ActiveWorkout() {
   const name = workout?.name ?? "Workout";
 
   const add = async () => {
-    if (!id || !selected || !weight || !reps) return;
-    await addSet(id, selected.name, parseFloat(weight), parseInt(reps, 10));
-    // Keep last values for the next set — bumping weight is usually all you change
+    if (!id || !selected) return;
+    const w = parseFloat(weight);
+    const r = parseInt(reps, 10);
+    if (!isFinite(w) || w < 0 || !Number.isInteger(r) || r < 1) {
+      toast("Enter a valid weight and at least 1 rep.", "error");
+      return;
+    }
+    try {
+      await addSet(id, selected.name, w, r);
+      // Keep last values for the next set — bumping weight is usually all you change
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't save the set. Check your connection.", "error");
+    }
   };
 
   const finish = async () => {
     if (!id) return;
-    await finishWorkout(id);
-    navigate("/app", { replace: true });
+    try {
+      await finishWorkout(id);
+      toast("Workout finished. Nice work! 💪", "success");
+      navigate("/app", { replace: true });
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't finish the workout. Try again.", "error");
+    }
   };
 
   return (
@@ -158,7 +177,12 @@ export default function ActiveWorkout() {
                       <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">reps</span>
                     </span>
                     <button
-                      onClick={() => id && removeSet(id, s.id)}
+                      onClick={() => {
+                        if (id)
+                          removeSet(id, s.id).catch(() =>
+                            toast("Couldn't remove the set. Try again.", "error")
+                          );
+                      }}
                       className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
                       aria-label="Remove set"
                     >
@@ -174,7 +198,7 @@ export default function ActiveWorkout() {
 
       {/* Sticky logging bar */}
       <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5">
-        <div className="panel mx-auto w-full max-w-md p-3 shadow-[var(--shadow-panel)]">
+        <div className="glass mx-auto w-full max-w-md p-3 shadow-[var(--shadow-panel)]">
           {picker ? (
             <div>
               <div className="relative">

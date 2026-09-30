@@ -11,10 +11,12 @@ import {
   type WorkoutSet,
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
+import { useToast } from "../components/Toast";
 
 export default function Profile() {
   const user = useAuthUser();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [setsByWorkout, setSetsByWorkout] = useState<Map<string, WorkoutSet[]>>(
     new Map()
@@ -48,8 +50,13 @@ export default function Profile() {
   );
 
   const doSignOut = async () => {
-    await signOut();
-    navigate("/");
+    try {
+      await signOut();
+      navigate("/");
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't sign out. Try again.", "error");
+    }
   };
 
   return (

@@ -16,7 +16,7 @@ const tabs = [
 export default function TabBar() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-2">
-      <div className="mx-auto flex w-full max-w-md items-stretch justify-around rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-1 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
+      <div className="glass mx-auto flex w-full max-w-md items-stretch justify-around rounded-2xl p-1 shadow-[var(--shadow-float)]">
         {tabs.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

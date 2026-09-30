@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Barbell } from "@phosphor-icons/react";
+import { Barbell, GoogleLogo } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
-import { signIn, signUp } from "../lib/data";
+import {
+  signIn,
+  signUp,
+  signInWithGoogle,
+  friendlyAuthError,
+} from "../lib/data";
+import { useToast } from "../components/Toast";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -13,36 +19,56 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const { toast } = useToast();
+
+  const go = () => navigate(returnTo, { replace: true });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    // Client-side validation before touching the network
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       if (mode === "signup") {
-        await signUp(email, password);
+        await signUp(email.trim(), password);
+        toast("Account created — welcome to Reprange!", "success");
       } else {
-        await signIn(email, password);
+        await signIn(email.trim(), password);
+        toast("Signed in. Welcome back!", "success");
       }
-      navigate(returnTo, { replace: true });
+      go();
     } catch (err) {
-      const code = (err as { code?: string }).code ?? "";
-      if (code.includes("email-already-in-use"))
-        setError("That email already has an account. Sign in instead.");
-      else if (code.includes("invalid-email"))
-        setError("That email doesn't look right.");
-      else if (code.includes("weak-password"))
-        setError("Password should be at least 6 characters.");
-      else if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found"))
-        setError("That email and password don't match.");
-      else
-        setError(
-          mode === "signup"
-            ? "Couldn't create the account."
-            : "Sign-in failed. Try again."
-        );
+      const msg = friendlyAuthError(err, mode);
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const google = async () => {
+    setGoogleBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+      toast("Signed in with Google!", "success");
+      go();
+    } catch (err) {
+      const msg = friendlyAuthError(err, "google");
+      // Silent cancel — no need to alarm the user
+      if (!(err as { code?: string }).code?.includes("popup-closed-by-user"))
+        toast(msg, "error");
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -97,11 +123,30 @@ export default function Auth() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        {error && <p className="text-[13px] font-medium text-[var(--ink)]">{error}</p>}
-        <button type="submit" className="btn-solid mt-2 w-full" disabled={busy}>
+        {error && (
+          <p role="alert" className="text-[13px] font-medium text-[#e5484d]">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="btn-solid mt-2 w-full" disabled={busy || googleBusy}>
           {busy ? "One moment…" : mode === "signin" ? "Sign in" : "Create account"}
         </button>
       </form>
+
+      <div className="my-5 flex items-center gap-3">
+        <span className="h-px flex-1 bg-[var(--line)]" />
+        <span className="label">or</span>
+        <span className="h-px flex-1 bg-[var(--line)]" />
+      </div>
+
+      <button
+        onClick={google}
+        disabled={busy || googleBusy}
+        className="btn-line w-full"
+      >
+        <GoogleLogo size={17} weight="bold" />
+        {googleBusy ? "Opening Google…" : "Continue with Google"}
+      </button>
 
       <button
         onClick={() => {

@@ -15,6 +15,7 @@ import {
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 import ThemeToggle from "../components/ThemeToggle";
+import { useToast } from "../components/Toast";
 
 function Stat({ value, label }: { value?: string | number; label: string }) {
   return (
@@ -44,6 +45,7 @@ export default function Today() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [setsByWorkout, setSetsByWorkout] = useState<Map<string, WorkoutSet[]>>(new Map());
   const [starting, setStarting] = useState(false);
+  const { toast } = useToast();
 
   // Realtime: active workout
   useEffect(() => {
@@ -85,6 +87,9 @@ export default function Today() {
     try {
       const id = await startWorkout(user.uid, name);
       navigate(`/app/workout/${id}`);
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't start the workout. Check your connection.", "error");
     } finally {
       setStarting(false);
     }

@@ -1,6 +1,8 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut as fbSignOut,
   onAuthStateChanged,
   type User,
@@ -74,6 +76,48 @@ export async function signIn(email: string, password: string) {
 
 export async function signOut() {
   return fbSignOut(auth);
+}
+
+export async function signInWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithPopup(auth, provider);
+}
+
+/* ---------- Friendly Firebase error messages (shared by auth pages) ---------- */
+
+export function friendlyAuthError(err: unknown, mode: "signin" | "signup" | "google"): string {
+  const code = (err as { code?: string }).code ?? "";
+  if (code.includes("popup-closed-by-user") || code.includes("cancelled-popup-request"))
+    return "Google sign-in was cancelled.";
+  if (code.includes("popup-blocked"))
+    return "Your browser blocked the Google popup — allow popups and try again.";
+  if (code.includes("account-exists-with-different-credential"))
+    return "That email is registered with a password. Sign in with email instead.";
+  if (code.includes("email-already-in-use"))
+    return "That email already has an account. Sign in instead.";
+  if (code.includes("invalid-email"))
+    return "That email doesn't look right.";
+  if (code.includes("weak-password"))
+    return "Password should be at least 6 characters.";
+  if (code.includes("too-many-requests"))
+    return "Too many attempts. Wait a moment and try again.";
+  if (code.includes("network-request-failed"))
+    return "Network problem — check your connection.";
+  if (
+    code.includes("invalid-credential") ||
+    code.includes("wrong-password") ||
+    code.includes("user-not-found") ||
+    code.includes("invalid-login-credentials")
+  )
+    return "That email and password don't match.";
+  if (code.includes("operation-not-allowed"))
+    return "This sign-in method isn't enabled yet. Contact support.";
+  return mode === "signup"
+    ? "Couldn't create the account. Try again."
+    : mode === "google"
+      ? "Google sign-in failed. Try again."
+      : "Sign-in failed. Try again.";
 }
 
 /* ---------- Exercises ---------- */

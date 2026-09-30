@@ -6,7 +6,7 @@ export default function ThemeToggle({ fixed = false }: { fixed?: boolean }) {
   return (
     <button
       onClick={toggle}
-      className={`icon-btn ${fixed ? "fixed right-4 top-4 z-50" : ""}`}
+      className={`icon-btn glass ${fixed ? "fixed right-4 top-4 z-50" : ""}`}
       style={
         fixed
           ? { top: "max(env(safe-area-inset-top), 12px)", right: 16 }
