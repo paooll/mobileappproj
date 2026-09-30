@@ -13,10 +13,19 @@ export interface Exercise {
   name: string;
   muscleGroup: string;
   equipment: string;
+  instructions: string[];
+  images: string[];
 }
+
+/** Bump to force a re-seed of the catalog with richer fields */
+const CATALOG_VERSION = 2;
 
 const DATASET_URL =
   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json";
+
+/** Dataset image paths are relative — resolve against the repo's raw content */
+const IMAGE_BASE =
+  "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main";
 
 const MUSCLE_LABELS: Record<string, string> = {
   abdominals: "Abs",
@@ -66,7 +75,7 @@ export async function ensureExerciseCatalog(): Promise<Exercise[]> {
   const metaRef = doc(db, "meta", "exerciseCatalog");
   const meta = await getDoc(metaRef);
 
-  if (meta.exists()) {
+  if (meta.exists() && (meta.data().version ?? 1) >= CATALOG_VERSION) {
     // Cached — read from Firestore (source of truth after first seed)
     const snap = await getDocs(collection(db, "exercises"));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Exercise);
@@ -80,6 +89,8 @@ export async function ensureExerciseCatalog(): Promise<Exercise[]> {
     name: string;
     equipment: string | null;
     primaryMuscles: string[];
+    instructions: string[];
+    images: string[];
   }[] = await res.json();
 
   const exercises: Exercise[] = raw
@@ -91,6 +102,10 @@ export async function ensureExerciseCatalog(): Promise<Exercise[]> {
         e.primaryMuscles.length > 0
           ? label(MUSCLE_LABELS, e.primaryMuscles[0])
           : "Full Body",
+      instructions: e.instructions ?? [],
+      images: (e.images ?? []).map((p) =>
+        p.startsWith("http") ? p : `${IMAGE_BASE}/${p.replace(/^\//, "")}`
+      ),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -102,6 +117,6 @@ export async function ensureExerciseCatalog(): Promise<Exercise[]> {
     }
     await batch.commit();
   }
-  await setDoc(metaRef, { seeded: true, count: exercises.length });
+  await setDoc(metaRef, { seeded: true, count: exercises.length, version: CATALOG_VERSION });
   return exercises;
 }

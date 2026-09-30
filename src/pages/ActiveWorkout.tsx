@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CaretLeft, X, Plus, Check, MagnifyingGlass } from "@phosphor-icons/react";
+import { CaretLeft, X, Plus, Check, MagnifyingGlass, Info } from "@phosphor-icons/react";
 import {
   getWorkout,
   loadExercises,
@@ -16,6 +16,7 @@ import {
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
+import ExerciseDetail from "../components/ExerciseDetail";
 
 export default function ActiveWorkout() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +35,7 @@ export default function ActiveWorkout() {
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [prefilling, setPrefilling] = useState(false);
+  const [detailEx, setDetailEx] = useState<Exercise | null>(null);
   const { toast } = useToast();
 
   // Load workout + exercise catalog once
@@ -217,14 +219,25 @@ export default function ActiveWorkout() {
               </div>
               <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
                 {filtered.map((e) => (
-                  <button
+                  <div
                     key={e.id}
-                    onClick={() => chooseExercise(e)}
-                    className="tab flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors active:bg-[var(--fill)]"
+                    className="flex items-center justify-between rounded-lg px-3 transition-colors active:bg-[var(--fill)]"
                   >
-                    <span className="truncate">{e.name}</span>
-                    <span className="label ml-2 shrink-0">{e.muscleGroup}</span>
-                  </button>
+                    <button
+                      onClick={() => chooseExercise(e)}
+                      className="tab flex-1 py-2.5 text-left text-[15px]"
+                    >
+                      <span className="truncate">{e.name}</span>
+                    </button>
+                    <span className="label mr-1 shrink-0">{e.muscleGroup}</span>
+                    <button
+                      onClick={() => setDetailEx(e)}
+                      className="tab shrink-0 p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+                      aria-label={`How to do ${e.name}`}
+                    >
+                      <Info size={15} />
+                    </button>
+                  </div>
                 ))}
                 {filtered.length === 0 && (
                   <p className="py-6 text-center text-[14px] text-[var(--ink-3)]">
@@ -281,6 +294,10 @@ export default function ActiveWorkout() {
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {detailEx && <ExerciseDetail exercise={detailEx} onClose={() => setDetailEx(null)} />}
+      </AnimatePresence>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { loadExercises, type Exercise } from "../lib/data";
 import ThemeToggle from "../components/ThemeToggle";
+import ExerciseDetail from "../components/ExerciseDetail";
+import { AnimatePresence } from "framer-motion";
 
 const GROUPS = ["All", "Chest", "Back", "Shoulders", "Arms", "Legs", "Abs", "Other"];
 
@@ -9,6 +11,7 @@ export default function Exercises() {
   const [exercises, setExercises] = useState<Exercise[] | null>(null);
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState("All");
+  const [detail, setDetail] = useState<Exercise | null>(null);
 
   useEffect(() => {
     loadExercises()
@@ -92,18 +95,23 @@ export default function Exercises() {
             <h2 className="label mb-2">{muscle}</h2>
             <div className="panel divide-y divide-[var(--line)]">
               {list.map((e) => (
-                <div
+                <button
                   key={e.id}
-                  className="flex items-center justify-between px-4 py-3 text-[15px]"
+                  onClick={() => setDetail(e)}
+                  className="tab flex w-full items-center justify-between px-4 py-3 text-left text-[15px] transition-opacity active:opacity-60"
                 >
                   <span className="truncate pr-2">{e.name}</span>
                   <span className="label ml-2 shrink-0">{e.equipment}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
         ))
       )}
+
+      <AnimatePresence>
+        {detail && <ExerciseDetail exercise={detail} onClose={() => setDetail(null)} />}
+      </AnimatePresence>
     </div>
   );
 }
