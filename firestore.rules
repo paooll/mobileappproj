@@ -8,10 +8,10 @@ service cloud.firestore {
     }
 
     // Exercise catalog: readable by any signed-in user; seeded once client-side
+    // (re-seeds may update existing docs when the catalog version bumps)
     match /exercises/{exerciseId} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update, delete: if false;
+      allow read, create, update: if signedIn();
+      allow delete: if false;
     }
 
     // Seed marker

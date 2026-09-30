@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MagnifyingGlass } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowClockwise } from "@phosphor-icons/react";
 import { loadExercises, type Exercise } from "../lib/data";
 import ThemeToggle from "../components/ThemeToggle";
 import ExerciseDetail from "../components/ExerciseDetail";
@@ -12,12 +12,20 @@ export default function Exercises() {
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState("All");
   const [detail, setDetail] = useState<Exercise | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setFailed(false);
+    setExercises(null);
     loadExercises()
       .then(setExercises)
-      .catch(() => setExercises([]));
-  }, []);
+      .catch((err) => {
+        console.error("Exercise catalog failed to load:", err);
+        setFailed(true);
+      });
+  };
+
+  useEffect(load, []);
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -83,13 +91,25 @@ export default function Exercises() {
         ))}
       </div>
 
-      {exercises === null ? (
+      {failed && (
+        <div className="panel mt-8 flex flex-col items-center gap-3 p-6 text-center">
+          <p className="text-[15px] font-medium">Couldn't load the exercise library</p>
+          <p className="text-[13px] text-[var(--ink-2)]">
+            Check your connection and try again. The first load may take a moment.
+          </p>
+          <button onClick={load} className="btn-line">
+            <ArrowClockwise size={16} weight="bold" /> Try again
+          </button>
+        </div>
+      )}
+
+      {exercises === null && !failed ? (
         <div className="mt-8 flex flex-col gap-2">
           {[0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="h-12 animate-pulse rounded-xl bg-[var(--fill)]" />
           ))}
         </div>
-      ) : (
+      ) : exercises !== null ? (
         grouped.map(([muscle, list]) => (
           <div key={muscle} className="mt-8">
             <h2 className="label mb-2">{muscle}</h2>
@@ -107,7 +127,7 @@ export default function Exercises() {
             </div>
           </div>
         ))
-      )}
+      ) : null}
 
       <AnimatePresence>
         {detail && <ExerciseDetail exercise={detail} onClose={() => setDetail(null)} />}
