@@ -161,13 +161,12 @@ export async function getWorkout(id: string): Promise<(Workout & { sets: Workout
 
 export async function listWorkouts(userId: string): Promise<Workout[]> {
   const snap = await getDocs(
-    query(
-      collection(db, "workouts"),
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc")
-    )
+    query(collection(db, "workouts"), where("userId", "==", userId))
   );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workout);
+  const workouts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workout);
+  // Newest first (avoids a composite index requirement)
+  workouts.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  return workouts;
 }
 
 export async function getActiveWorkout(userId: string): Promise<Workout | null> {
