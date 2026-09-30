@@ -9,6 +9,7 @@ import {
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 import StartWorkoutCard from "../components/StartWorkoutCard";
+import ThemeToggle from "../components/ThemeToggle";
 
 function Stat({ value, label }: { value?: string | number; label: string }) {
   return (
@@ -59,6 +60,7 @@ export default function Today() {
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
+      <ThemeToggle fixed />
       <motion.header {...rise()}>
         <p className="label">
           {new Date().toLocaleDateString(undefined, {

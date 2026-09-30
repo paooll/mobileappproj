@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Barbell } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
 import { signIn, signUp } from "../lib/data";
 
 export default function Auth() {
@@ -47,6 +48,7 @@ export default function Auth() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-sm flex-col px-6 pt-[max(env(safe-area-inset-top),80px)]">
+      <ThemeToggle fixed />
       <div className="flex items-center gap-2">
         <Barbell size={20} weight="bold" />
         <span className="text-[16px] font-semibold tracking-tight">Reprange</span>

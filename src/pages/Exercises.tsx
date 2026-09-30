@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
 import { listExercises, type Exercise } from "../lib/data";
 
 export default function Exercises() {
@@ -25,7 +26,10 @@ export default function Exercises() {
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
-      <h1 className="text-[30px] font-bold tracking-[-0.02em]">Library</h1>
+      <div className="flex items-start justify-between">
+        <h1 className="text-[30px] font-bold tracking-[-0.02em]">Library</h1>
+        <ThemeToggle />
+      </div>
       <div className="relative mt-5">
         <MagnifyingGlass
           size={16}

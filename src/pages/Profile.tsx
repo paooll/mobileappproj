@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SignOut } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
 import { signOut, getStats, type Stats } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 
@@ -21,7 +22,10 @@ export default function Profile() {
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
-      <h1 className="text-[30px] font-bold tracking-[-0.02em]">Profile</h1>
+      <div className="flex items-start justify-between">
+        <h1 className="text-[30px] font-bold tracking-[-0.02em]">Profile</h1>
+        <ThemeToggle />
+      </div>
 
       <div className="panel mt-6 p-5">
         <div className="flex items-center gap-4">

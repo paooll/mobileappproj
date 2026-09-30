@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trash } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
 import { listWorkouts, deleteWorkout, type Workout } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 
@@ -36,7 +37,10 @@ export default function History() {
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
-      <h1 className="text-[30px] font-bold tracking-[-0.02em]">History</h1>
+      <div className="flex items-start justify-between">
+        <h1 className="text-[30px] font-bold tracking-[-0.02em]">History</h1>
+        <ThemeToggle />
+      </div>
       <p className="label mt-1 normal-case">
         {completed.length} completed {completed.length === 1 ? "workout" : "workouts"}
       </p>

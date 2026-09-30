@@ -2,8 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light dark;
+/* Theme tokens — driven by .light / .dark on <html> (see useTheme) */
+
+:root,
+:root.light {
   --bg: #fafafa;
   --surface: #ffffff;
   --ink: #111111;
@@ -11,19 +13,21 @@
   --ink-3: #a3a3a3;
   --line: #e8e8e8;
   --fill: #f2f2f2;
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c0c0d;
-    --surface: #161618;
-    --surface-2: #1e1e21;
-    --ink: #f5f5f5;
-    --ink-2: #a0a0a5;
-    --ink-3: #636368;
-    --line: #262629;
-    --fill: #232326;
-  }
+:root.dark {
+  --bg: #0c0c0d;
+  --surface: #161618;
+  --surface-2: #1e1e21;
+  --ink: #f5f5f5;
+  --ink-2: #a0a0a5;
+  --ink-3: #636368;
+  --line: #262629;
+  --fill: #232326;
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -45,10 +49,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-    "Helvetica Neue", system-ui, sans-serif;
+  font-family: "Quicksand", -apple-system, BlinkMacSystemFont, system-ui,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   line-height: 1.55;
+  transition: background 200ms ease, color 200ms ease;
 }
 
 #root {
@@ -97,15 +102,23 @@ body {
     color: var(--ink-3);
   }
   .label {
-    font-family: "SF Mono", ui-monospace, monospace;
+    font-family: "Quicksand", sans-serif;
     font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    font-weight: 600;
     color: var(--ink-3);
   }
   .num {
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
+  }
+  .icon-btn {
+    @apply inline-flex items-center justify-center rounded-full transition-transform active:scale-[0.92];
+    width: 40px;
+    height: 40px;
+    background: var(--fill);
+    color: var(--ink);
   }
 }
 

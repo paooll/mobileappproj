@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -82,16 +83,19 @@ export default function Landing() {
         };
 
   return (
-    <div className="min-h-[100dvh] bg-[#fafafa] text-[#111111]">
-      <nav className="sticky top-0 z-40 border-b border-[#e8e8e8] bg-[#fafafa]/90 backdrop-blur">
+    <div className="min-h-[100dvh] bg-[var(--bg)] text-[var(--ink)]">
+      <nav className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--bg)]/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
           <span className="text-[16px] font-semibold tracking-tight">Reprange</span>
-          <Link
-            to="/auth"
-            className="tab text-[14px] font-medium text-[#6b6b6b] transition-opacity active:opacity-60"
-          >
-            Sign in
-          </Link>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <Link
+              to="/auth"
+              className="tab text-[14px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+            >
+              Sign in
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -121,8 +125,7 @@ export default function Landing() {
                     animate: { opacity: 1, y: 0 },
                     transition: { duration: 0.7, delay: 0.1, ease },
                   })}
-              className="mt-4 max-w-[36ch] text-[16px] leading-relaxed text-[#6b6b6b]"
-            >
+              className="mt-4 max-w-[36ch] text-[16px] leading-relaxedtext-[var(--ink-2)]">
               A workout tracker that stays out of the way of the work. Two taps
               per set, one number that keeps you honest.
             </motion.p>
@@ -160,7 +163,7 @@ export default function Landing() {
         </section>
 
         {/* Three numbers, not three cards */}
-        <section className="border-t border-[#e8e8e8] py-20">
+        <section className="border-t border-[var(--line)] py-20">
           <div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
             {[
               ["2 taps", "to log a set. Weight, reps, done — under the rest clock."],
@@ -169,7 +172,7 @@ export default function Landing() {
             ].map(([head, body], i) => (
               <motion.div key={head} {...fade(i * 0.08)}>
                 <p className="text-[28px] font-bold tracking-[-0.02em]">{head}</p>
-                <p className="mt-2 text-[14px] leading-relaxed text-[#6b6b6b]">
+                <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
                   {body}
                 </p>
               </motion.div>
@@ -192,8 +195,8 @@ export default function Landing() {
           </motion.div>
         </section>
 
-        <footer className="border-t border-[#e8e8e8] py-8">
-          <p className="text-center text-[13px] text-[#a3a3a3]">Reprange</p>
+        <footer className="border-t border-[var(--line)] py-8">
+          <p className="text-center text-[13px] text-[var(--ink-3)]">Reprange</p>
         </footer>
       </main>
     </div>
