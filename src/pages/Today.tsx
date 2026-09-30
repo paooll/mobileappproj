@@ -1,33 +1,31 @@
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Fire, CalendarBlank, Package, Stack } from "@phosphor-icons/react";
+import {
+  getStats,
+  getActiveWorkout,
+  listWorkouts,
+  type Stats,
+  type Workout,
+} from "../lib/data";
+import { useAuthUser } from "../hooks/useAuthUser";
 import StartWorkoutCard from "../components/StartWorkoutCard";
 
-function Stat({
-  icon: Icon,
-  value,
-  label,
-}: {
-  icon: React.ElementType;
-  value: string | number | undefined;
-  label: string;
-}) {
+function Stat({ value, label }: { value?: string | number; label: string }) {
   return (
     <div className="panel flex flex-col gap-0.5 p-4">
-      <Icon size={20} weight="duotone" className="text-spot" />
-      <span className="font-mono text-[22px] font-medium tracking-tight">
+      <span className="num text-[26px] font-semibold leading-none">
         {value ?? "–"}
       </span>
-      <span className="meta">{label}</span>
+      <span className="label mt-1">{label}</span>
     </div>
   );
 }
 
 export default function Today() {
-  const stats = useQuery(api.workouts.stats);
-  const active = useQuery(api.workouts.active);
-  const recent = useQuery(api.workouts.list);
+  const user = useAuthUser();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [active, setActive] = useState<Workout | null>(null);
+  const [recent, setRecent] = useState<Workout[]>([]);
   const reduce = useReducedMotion();
   const rise = (delay = 0) =>
     reduce
@@ -35,56 +33,109 @@ export default function Today() {
       : {
           initial: { opacity: 0, y: 12 },
           animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.5, delay, ease: [0.16, 1, 0.3, 1] as const },
+          transition: { duration: 0.45, delay, ease: [0.16, 1, 0.3, 1] as const },
         };
 
-  const completed = (recent ?? []).filter((w) => w.completedAt).slice(0, 3);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const [s, a, w] = await Promise.all([
+        getStats(user.uid),
+        getActiveWorkout(user.uid),
+        listWorkouts(user.uid),
+      ]);
+      if (cancelled) return;
+      setStats(s);
+      setActive(a);
+      setRecent(w);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const completed = recent.filter((w) => w.completed).slice(0, 3);
 
   return (
-    <div className="px-5 pt-12">
+    <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
       <motion.header {...rise()}>
-        <p className="meta">
+        <p className="label">
           {new Date().toLocaleDateString(undefined, {
             weekday: "long",
             month: "long",
             day: "numeric",
           })}
         </p>
-        <h1 className="mt-1 text-[30px] font-semibold tracking-[-0.02em]">
-          Today
-        </h1>
       </motion.header>
 
-      <StartWorkoutCard activeId={active?._id} />
-
-      <h2 className="meta mt-10 mb-3">This week</h2>
-      <motion.div {...rise(0.12)} className="grid grid-cols-2 gap-3">
-        <Stat icon={Fire} value={stats?.streak} label="Day streak" />
-        <Stat icon={CalendarBlank} value={stats?.totalWorkouts} label="Workouts" />
-        <Stat
-          icon={Package}
-          value={stats ? `${(stats.totalVolume / 1000).toFixed(1)}t` : undefined}
-          label="Volume"
-        />
-        <Stat icon={Stack} value={stats?.totalSets} label="Sets" />
+      <motion.div {...rise(0.05)} className="mt-4">
+        <div className="flex items-end gap-3">
+          <span className="num text-[76px] font-bold leading-[0.9] tracking-[-0.04em]">
+            {stats?.streak ?? 0}
+          </span>
+          <span className="pb-2 text-[15px] font-medium text-[var(--ink-2)]">
+            day{stats?.streak === 1 ? "" : "s"} in a row
+          </span>
+        </div>
       </motion.div>
+
+      <StartWorkoutCard
+        activeId={active?.id}
+        onStarted={async () => {
+          if (!user) return;
+          setActive(await getActiveWorkout(user.uid));
+        }}
+      />
+
+      <h2 className="label mt-10 mb-3">Training load</h2>
+      {!stats ? (
+        <div className="grid grid-cols-2 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-[92px] animate-pulse rounded-[14px] bg-[var(--fill)]"
+              style={{ animationDelay: `${i * 100}ms` }}
+            />
+          ))}
+        </div>
+      ) : (
+        <motion.div {...rise(0.1)} className="grid grid-cols-2 gap-3">
+          <Stat value={stats.totalWorkouts} label="Workouts" />
+          <Stat
+            value={
+              stats.totalVolume >= 1000
+                ? `${(stats.totalVolume / 1000).toFixed(1)} t`
+                : `${stats.totalVolume} kg`
+            }
+            label="Volume lifted"
+          />
+          <Stat value={stats.totalSets} label="Sets logged" />
+          <Stat
+            value={
+              stats.totalWorkouts
+                ? Math.round(stats.totalSets / stats.totalWorkouts)
+                : 0
+            }
+            label="Sets / workout"
+          />
+        </motion.div>
+      )}
 
       {completed.length > 0 && (
         <>
-          <h2 className="meta mt-10 mb-3">Recent</h2>
-          <div className="panel divide-y divide-line p-0">
+          <h2 className="label mt-10 mb-3">Recent</h2>
+          <motion.div {...rise(0.15)} className="panel divide-y divide-[var(--line)]">
             {completed.map((w) => (
-              <div key={w._id} className="flex items-center justify-between px-4 py-3.5">
+              <div key={w.id} className="flex items-center justify-between px-4 py-3.5">
                 <div>
                   <p className="text-[15px] font-medium">{w.name}</p>
-                  <p className="meta mt-0.5 normal-case">{w.date}</p>
+                  <p className="label mt-0.5 normal-case">{w.date}</p>
                 </div>
-                <span className="rounded-full bg-pale-green px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.05em] text-pale-greentext">
-                  Done
-                </span>
+                <span className="num text-[13px] font-semibold">✓</span>
               </div>
             ))}
-          </div>
+          </motion.div>
         </>
       )}
     </div>

@@ -1,35 +1,73 @@
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import {
-  Barbell,
-  FireSimple,
-  ChartLineUp,
-  ArrowRight,
-  Barbell as Dumbbell,
-} from "@phosphor-icons/react";
-
-const features = [
-  {
-    icon: Barbell,
-    title: "Log in seconds",
-    body: "Two taps and a number. A set is recorded before your rest clock finishes.",
-    seed: "reprange-barbell-plates",
-  },
-  {
-    icon: FireSimple,
-    title: "Streaks that stick",
-    body: "Show up, tap the day. The count does the motivating for you.",
-    seed: "reprange-athlete-morning",
-  },
-  {
-    icon: ChartLineUp,
-    title: "See strength grow",
-    body: "Every set adds to your total volume. Progress you can point at.",
-    seed: "reprange-gym-quiet",
-  },
-];
+import { ArrowRight } from "@phosphor-icons/react";
 
 const ease = [0.16, 1, 0.3, 1] as const;
+
+/* Real component preview of the dark app — not a fake div screenshot */
+function AppPreview() {
+  return (
+    <div
+      className="w-full rounded-[2rem] border border-[#262629] p-5 text-left"
+      style={{ background: "#0c0c0d", color: "#f5f5f5" }}
+    >
+      <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#2c2c30]" />
+      <p
+        className="text-[10px] uppercase tracking-[0.08em]"
+        style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
+      >
+        Monday · Push Day
+      </p>
+      <div className="mt-2 flex items-end gap-2">
+        <span className="num text-[44px] font-bold leading-none tracking-[-0.04em]">
+          12
+        </span>
+        <span className="pb-1 text-[12px] font-medium" style={{ color: "#a0a0a5" }}>
+          days in a row
+        </span>
+      </div>
+      <div className="mt-4 rounded-2xl border border-[#262629] p-3" style={{ background: "#161618" }}>
+        <div className="flex items-center justify-between">
+          <p className="text-[13px] font-semibold">Bench Press</p>
+          <p
+            className="text-[10px] uppercase tracking-[0.08em]"
+            style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
+          >
+            3 sets
+          </p>
+        </div>
+        <div className="mt-2 flex flex-col gap-1.5">
+          {[
+            ["1", "70 kg × 8"],
+            ["2", "72.5 kg × 8"],
+            ["3", "72.5 kg × 6"],
+          ].map(([n, v]) => (
+            <div
+              key={n}
+              className="flex items-center justify-between rounded-xl px-3 py-2"
+              style={{ background: "#232326" }}
+            >
+              <span
+                className="text-[10px]"
+                style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
+              >
+                {n}
+              </span>
+              <span className="num text-[14px] font-semibold">{v}</span>
+              <span className="w-3" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div
+        className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl text-[13px] font-semibold"
+        style={{ background: "#f5f5f5", color: "#0c0c0d" }}
+      >
+        Add set
+      </div>
+    </div>
+  );
+}
 
 export default function Landing() {
   const reduce = useReducedMotion();
@@ -44,19 +82,13 @@ export default function Landing() {
         };
 
   return (
-    <div className="min-h-[100dvh] bg-canvas">
-      {/* Nav — single line, hairline bottom */}
-      <nav className="sticky top-0 z-40 border-b border-line bg-canvas/90 backdrop-blur">
+    <div className="min-h-[100dvh] bg-[#fafafa] text-[#111111]">
+      <nav className="sticky top-0 z-40 border-b border-[#e8e8e8] bg-[#fafafa]/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
-          <div className="flex items-center gap-2">
-            <Dumbbell size={20} weight="bold" />
-            <span className="text-[16px] font-semibold tracking-tight">
-              Reprange
-            </span>
-          </div>
+          <span className="text-[16px] font-semibold tracking-tight">Reprange</span>
           <Link
             to="/auth"
-            className="text-[14px] font-medium text-ink-2 transition-colors hover:text-ink"
+            className="tab text-[14px] font-medium text-[#6b6b6b] transition-opacity active:opacity-60"
           >
             Sign in
           </Link>
@@ -64,8 +96,8 @@ export default function Landing() {
       </nav>
 
       <main className="mx-auto w-full max-w-3xl px-5">
-        {/* Hero — asymmetric: text left, photo right. Max 4 text elements. */}
-        <section className="grid min-h-[82dvh] grid-cols-1 items-center gap-10 py-14 md:grid-cols-[1.1fr_1fr] md:py-0">
+        {/* Asymmetric hero: copy left, real app preview right */}
+        <section className="grid min-h-[80dvh] grid-cols-1 items-center gap-12 py-16 md:grid-cols-[1.15fr_1fr] md:py-0">
           <div className="order-2 md:order-1">
             <motion.h1
               {...(reduce
@@ -75,7 +107,7 @@ export default function Landing() {
                     animate: { opacity: 1, y: 0 },
                     transition: { duration: 0.7, ease },
                   })}
-              className="text-[44px] font-semibold leading-[1.05] tracking-[-0.03em] md:text-[56px]"
+              className="text-[46px] font-bold leading-[1.02] tracking-[-0.035em] md:text-[58px]"
             >
               Train. Log.
               <br />
@@ -89,9 +121,10 @@ export default function Landing() {
                     animate: { opacity: 1, y: 0 },
                     transition: { duration: 0.7, delay: 0.1, ease },
                   })}
-              className="mt-4 max-w-[38ch] text-[16px] leading-relaxed text-ink-2"
+              className="mt-4 max-w-[36ch] text-[16px] leading-relaxed text-[#6b6b6b]"
             >
-              A workout tracker that stays out of the way of the work.
+              A workout tracker that stays out of the way of the work. Two taps
+              per set, one number that keeps you honest.
             </motion.p>
             <motion.div
               {...(reduce
@@ -103,10 +136,7 @@ export default function Landing() {
                   })}
               className="mt-8 flex flex-col gap-3 sm:flex-row"
             >
-              <Link
-                to="/auth?returnTo=%2Fapp"
-                className="btn-solid w-full sm:w-auto"
-              >
+              <Link to="/auth?returnTo=%2Fapp" className="btn-solid w-full sm:w-auto">
                 Start training
                 <ArrowRight size={16} weight="bold" />
               </Link>
@@ -119,77 +149,51 @@ export default function Landing() {
             {...(reduce
               ? {}
               : {
-                  initial: { opacity: 0, scale: 0.97 },
-                  animate: { opacity: 1, scale: 1 },
+                  initial: { opacity: 0, y: 24 },
+                  animate: { opacity: 1, y: 0 },
                   transition: { duration: 0.8, delay: 0.15, ease },
                 })}
             className="order-1 md:order-2"
           >
-            <img
-              src="https://picsum.photos/seed/reprange-hero-barbell/720/900"
-              alt="Loaded barbell resting on a gym floor"
-              width={720}
-              height={900}
-              loading="eager"
-              className="aspect-[4/5] w-full rounded-xl border border-line object-cover grayscale-[0.35] contrast-[0.96]"
-            />
+            <AppPreview />
           </motion.div>
         </section>
 
-        {/* Features — bento 1+2 split, image inside two cells */}
-        <section className="grid grid-cols-1 gap-4 py-24 md:grid-cols-2">
-          {features.map(({ icon: Icon, title, body, seed }, i) => (
-            <motion.div
-              key={title}
-              {...fade(i * 0.08)}
-              className={`panel flex flex-col gap-3 p-8 ${
-                i === 0 ? "md:col-span-2 md:flex-row md:items-center md:gap-10" : ""
-              }`}
-            >
-              <div className={i === 0 ? "md:max-w-[22rem]" : ""}>
-                <Icon size={24} weight="duotone" className="text-spot" />
-                <h3 className="mt-4 text-[19px] font-semibold tracking-tight">
-                  {title}
-                </h3>
-                <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">
+        {/* Three numbers, not three cards */}
+        <section className="border-t border-[#e8e8e8] py-20">
+          <div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
+            {[
+              ["2 taps", "to log a set. Weight, reps, done — under the rest clock."],
+              ["1 number", "your streak. Show up and it grows. Miss a day, start over."],
+              ["0 clutter", "no feeds, no badges, no noise. Sets and progress only."],
+            ].map(([head, body], i) => (
+              <motion.div key={head} {...fade(i * 0.08)}>
+                <p className="text-[28px] font-bold tracking-[-0.02em]">{head}</p>
+                <p className="mt-2 text-[14px] leading-relaxed text-[#6b6b6b]">
                   {body}
                 </p>
-              </div>
-              <img
-                src={`https://picsum.photos/seed/${seed}/640/420`}
-                alt=""
-                width={640}
-                height={420}
-                loading="lazy"
-                className={`mt-2 w-full rounded-lg border border-line object-cover grayscale-[0.35] ${
-                  i === 0 ? "md:ml-auto md:max-w-[280px]" : ""
-                }`}
-              />
-            </motion.div>
-          ))}
+              </motion.div>
+            ))}
+          </div>
         </section>
 
-        {/* Closing CTA — plain, hairline top, no dark block */}
-        <section className="border-t border-line py-24 text-center">
+        <section className="border-t border-[#e8e8e8] py-20 text-center">
           <motion.h2
             {...fade()}
-            className="mx-auto max-w-[16ch] text-[30px] font-semibold leading-tight tracking-[-0.02em]"
+            className="mx-auto max-w-[18ch] text-[30px] font-bold leading-tight tracking-[-0.02em]"
           >
             Your next session starts now.
           </motion.h2>
           <motion.div {...fade(0.1)} className="mt-7">
-            <Link
-              to="/auth?returnTo=%2Fapp"
-              className="btn-solid mx-auto inline-flex"
-            >
+            <Link to="/auth?returnTo=%2Fapp" className="btn-solid mx-auto inline-flex">
               Start training
               <ArrowRight size={16} weight="bold" />
             </Link>
           </motion.div>
         </section>
 
-        <footer className="border-t border-line py-8">
-          <p className="text-center text-[13px] text-ink-3">Reprange</p>
+        <footer className="border-t border-[#e8e8e8] py-8">
+          <p className="text-center text-[13px] text-[#a3a3a3]">Reprange</p>
         </footer>
       </main>
     </div>

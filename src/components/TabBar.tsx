@@ -15,20 +15,22 @@ const tabs = [
 
 export default function TabBar() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-canvas">
-      <div className="mx-auto flex w-full max-w-md items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)] pt-1.5">
+    <nav className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-2">
+      <div className="mx-auto flex w-full max-w-md items-stretch justify-around rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-1 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
         {tabs.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px] font-medium transition-colors ${
-                isActive ? "text-ink" : "text-ink-3"
+              `tab flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2 text-[11px] font-medium transition-colors ${
+                isActive
+                  ? "bg-[var(--fill)] text-[var(--ink)]"
+                  : "text-[var(--ink-3)]"
               }`
             }
           >
-            <Icon size={22} weight={undefined} />
+            <Icon size={21} weight={undefined} />
             {label}
           </NavLink>
         ))}

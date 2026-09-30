@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useQuery } from "convex/react";
-import { api } from "./convex/_generated/api";
+import { useAuthUser } from "./hooks/useAuthUser";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import Today from "./pages/Today";
@@ -9,22 +8,20 @@ import History from "./pages/History";
 import Exercises from "./pages/Exercises";
 import Profile from "./pages/Profile";
 import TabBar from "./components/TabBar";
-import AppBootstrap from "./components/AppBootstrap";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const userId = useQuery(api.users.loggedInUser);
+  const user = useAuthUser();
   const location = useLocation();
-  if (userId === undefined)
+  if (user === undefined)
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-ink" />
+      <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
+        <div className="h-9 w-40 animate-pulse rounded-xl bg-[var(--fill)]" />
       </div>
     );
-  if (!userId)
+  if (!user)
     return <Navigate to={`/auth?returnTo=${encodeURIComponent(location.pathname)}`} replace />;
   return (
-    <div className="mx-auto min-h-screen w-full max-w-md pb-24">
-      <AppBootstrap />
+    <div className="mx-auto min-h-[100dvh] w-full max-w-md pb-32">
       {children}
       <TabBar />
     </div>

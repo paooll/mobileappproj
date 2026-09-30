@@ -1,20 +1,27 @@
-import { useMemo, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { CaretLeft, X, Plus, Check } from "@phosphor-icons/react";
+import {
+  getWorkout,
+  listExercises,
+  addSet,
+  removeSet,
+  finishWorkout,
+  type Workout,
+  type WorkoutSet,
+  type Exercise,
+} from "../lib/data";
 
 export default function ActiveWorkout() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const workoutId = id as import("../convex/_generated/dataModel").Id<"workouts">;
-  const workout = useQuery(api.workouts.get, { id: workoutId });
-  const exercises = useQuery(api.exercises.list);
-  const addSet = useMutation(api.workouts.addSet);
-  const removeSet = useMutation(api.workouts.removeSet);
-  const finish = useMutation(api.workouts.finish);
   const reduce = useReducedMotion();
+
+  const [workout, setWorkout] = useState<(Workout & { sets: WorkoutSet[] }) | null>(
+    null
+  );
+  const [exercises, setExercises] = useState<Exercise[]>([]);
 
   const [exerciseName, setExerciseName] = useState("");
   const [weight, setWeight] = useState("");
@@ -22,16 +29,22 @@ export default function ActiveWorkout() {
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState("");
 
+  useEffect(() => {
+    if (!id) return;
+    getWorkout(id).then((w) => w && setWorkout(w));
+    listExercises().then(setExercises);
+  }, [id]);
+
   const filtered = useMemo(
     () =>
-      (exercises ?? []).filter((e) =>
+      exercises.filter((e) =>
         e.name.toLowerCase().includes(search.toLowerCase())
       ),
     [exercises, search]
   );
 
   const grouped = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof workout>["sets"]>();
+    const map = new Map<string, WorkoutSet[]>();
     for (const s of workout?.sets ?? []) {
       const arr = map.get(s.exerciseName) ?? [];
       arr.push(s);
@@ -42,49 +55,60 @@ export default function ActiveWorkout() {
 
   if (!workout) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center">
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-ink" />
+      <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
+        <div className="h-9 w-44 animate-pulse rounded-xl bg-[var(--fill)]" />
+        <div className="mt-6 h-32 animate-pulse rounded-[14px] bg-[var(--fill)]" />
       </div>
     );
   }
 
-  const add = async () => {
-    if (!exerciseName || !weight || !reps) return;
-    await addSet({
-      workoutId,
-      exerciseName,
-      weight: parseFloat(weight),
-      reps: parseInt(reps, 10),
-    });
-    setReps("");
+  const refresh = async () => {
+    if (!id) return;
+    const w = await getWorkout(id);
+    if (w) setWorkout(w);
   };
 
-  const finishWorkout = async () => {
-    await finish({ workoutId });
+  const add = async () => {
+    if (!id || !exerciseName || !weight || !reps) return;
+    await addSet(id, exerciseName, parseFloat(weight), parseInt(reps, 10));
+    setReps("");
+    await refresh();
+  };
+
+  const remove = async (setId: string) => {
+    if (!id) return;
+    await removeSet(id, setId);
+    await refresh();
+  };
+
+  const finish = async () => {
+    if (!id) return;
+    await finishWorkout(id);
     navigate("/app", { replace: true });
   };
 
   return (
-    <div className="min-h-[100dvh] px-5 pb-32 pt-12">
+    <div className="min-h-[100dvh] px-5 pb-40 pt-[max(env(safe-area-inset-top),24px)]">
       <header className="flex items-center justify-between">
         <button
           onClick={() => navigate("/app")}
-          className="flex items-center gap-0.5 text-[15px] font-medium text-spot"
+          className="tab flex items-center gap-0.5 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
         >
           <CaretLeft size={18} weight="bold" /> Today
         </button>
         <button
-          onClick={finishWorkout}
-          className="flex items-center gap-1.5 rounded-md bg-[#111111] px-4 py-2 text-[14px] font-medium text-white transition-transform active:scale-[0.98]"
+          onClick={finish}
+          className="tab flex items-center gap-1.5 rounded-xl bg-[var(--ink)] px-4 text-[14px] font-semibold text-[var(--bg)] transition-transform active:scale-[0.97]"
+          style={{ height: 40 }}
         >
           <Check size={15} weight="bold" /> Finish
         </button>
       </header>
 
-      <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.02em]">
+      <h1 className="mt-5 text-[30px] font-bold tracking-[-0.02em]">
         {workout.name}
       </h1>
-      <p className="meta mt-1 normal-case">
+      <p className="label mt-1 normal-case">
         {workout.sets.length} {workout.sets.length === 1 ? "set" : "sets"} logged
       </p>
 
@@ -102,22 +126,31 @@ export default function ActiveWorkout() {
             className="panel p-4"
           >
             <div className="flex items-baseline justify-between">
-              <h3 className="text-[15px] font-semibold">{name}</h3>
-              <span className="meta">{sets.length} sets</span>
+              <h3 className="text-[16px] font-semibold">{name}</h3>
+              <span className="label">{sets.length} sets</span>
             </div>
-            <div className="mt-3 flex flex-col gap-1">
+            <div className="mt-3 flex flex-col gap-1.5">
               {sets.map((s, i) => (
                 <div
-                  key={s._id}
-                  className="flex items-center justify-between rounded-lg bg-bone px-3 py-2"
+                  key={s.id}
+                  className="flex items-center justify-between rounded-xl bg-[var(--fill)] px-4"
+                  style={{ height: 48 }}
                 >
-                  <span className="meta w-6">{i + 1}</span>
-                  <span className="font-mono text-[14px] font-medium">
-                    {s.weight} kg × {s.reps}
+                  <span className="label w-6">{i + 1}</span>
+                  <span className="num text-[17px] font-semibold">
+                    {s.weight}
+                    <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
+                      kg
+                    </span>
+                    <span className="mx-2 text-[var(--ink-3)]">×</span>
+                    {s.reps}
+                    <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
+                      reps
+                    </span>
                   </span>
                   <button
-                    onClick={() => removeSet({ setId: s._id })}
-                    className="text-ink-3 transition-colors hover:text-pale-redtext"
+                    onClick={() => remove(s.id)}
+                    className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
                     aria-label="Remove set"
                   >
                     <X size={15} />
@@ -129,80 +162,80 @@ export default function ActiveWorkout() {
         ))}
       </div>
 
-      <div className="panel mt-4 p-4">
-        {picker ? (
-          <div>
-            <input
-              autoFocus
-              className="field"
-              placeholder="Search exercises"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="mt-2 max-h-64 overflow-y-auto">
-              {filtered.map((e) => (
-                <button
-                  key={e._id}
-                  onClick={() => {
-                    setExerciseName(e.name);
-                    setPicker(false);
-                    setSearch("");
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors hover:bg-bone"
-                >
-                  <span>{e.name}</span>
-                  <span className="meta">{e.muscleGroup}</span>
-                </button>
-              ))}
+      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5">
+        <div className="panel mx-auto w-full max-w-md p-3 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+          {picker ? (
+            <div>
+              <input
+                autoFocus
+                className="field"
+                placeholder="Search exercises"
+                enterKeyHint="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
+                {filtered.map((e) => (
+                  <button
+                    key={e.id}
+                    onClick={() => {
+                      setExerciseName(e.name);
+                      setPicker(false);
+                      setSearch("");
+                    }}
+                    className="tab flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors active:bg-[var(--fill)]"
+                  >
+                    <span>{e.name}</span>
+                    <span className="label">{e.muscleGroup}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-col gap-1.5">
-              <span className="meta">Exercise</span>
+          ) : (
+            <>
               <button
                 onClick={() => setPicker(true)}
-                className="flex items-center justify-between rounded-lg bg-bone px-3.5 py-3 text-left"
+                className="tab flex w-full items-center justify-between rounded-xl bg-[var(--fill)] px-4 text-left"
+                style={{ height: 44 }}
               >
                 <span
-                  className={`text-[15px] ${exerciseName ? "font-medium text-ink" : "text-ink-3"}`}
+                  className={`text-[15px] ${exerciseName ? "font-medium" : "text-[var(--ink-3)]"}`}
                 >
                   {exerciseName || "Choose exercise"}
                 </span>
-                <span className="text-[13px] font-medium text-spot">Change</span>
+                <span className="text-[13px] font-medium">Change</span>
               </button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="meta">Weight, kg</span>
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <input
-                  className="field font-mono"
+                  className="field num"
                   type="number"
                   inputMode="decimal"
+                  placeholder="kg"
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                 />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="meta">Reps</span>
                 <input
-                  className="field font-mono"
+                  className="field num"
                   type="number"
                   inputMode="numeric"
+                  placeholder="reps"
                   value={reps}
                   onChange={(e) => setReps(e.target.value)}
                 />
               </div>
-            </div>
-            <button
-              className="btn-solid mt-4 w-full"
-              disabled={!exerciseName || !weight || !reps}
-              onClick={add}
-            >
-              <Plus size={16} weight="bold" /> Add set
-            </button>
-          </>
-        )}
+              <button
+                className="btn-solid mt-2 w-full"
+                disabled={!exerciseName || !weight || !reps}
+                style={
+                  exerciseName && weight && reps ? undefined : { opacity: 0.4 }
+                }
+                onClick={add}
+              >
+                <Plus size={17} weight="bold" /> Add set
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
