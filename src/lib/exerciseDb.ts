@@ -18,14 +18,14 @@ export interface Exercise {
 }
 
 /** Bump to force a re-seed of the catalog with richer fields */
-const CATALOG_VERSION = 2;
+const CATALOG_VERSION = 3;
 
 const DATASET_URL =
   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json";
 
-/** Dataset image paths are relative — resolve against the repo's raw content */
+/** Dataset image paths are relative to the exercises/ folder — resolve against raw content */
 const IMAGE_BASE =
-  "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main";
+  "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises";
 
 const MUSCLE_LABELS: Record<string, string> = {
   abdominals: "Abs",

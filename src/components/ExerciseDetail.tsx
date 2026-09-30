@@ -16,7 +16,9 @@ export default function ExerciseDetail({
 }) {
   const reduce = useReducedMotion();
   const [img, setImg] = useState(0);
+  const [broken, setBroken] = useState<Set<number>>(new Set());
   const imgs = exercise.images ?? [];
+  const visible = imgs.filter((_, i) => !broken.has(i));
 
   const step = (dir: 1 | -1) =>
     setImg((i) => Math.min(Math.max(i + dir, 0), imgs.length - 1));
@@ -71,26 +73,29 @@ export default function ExerciseDetail({
           </div>
 
           {/* Demo images carousel */}
-          {imgs.length > 0 ? (
+          {visible.length > 0 ? (
             <div className="mt-4">
               <div className="relative overflow-hidden rounded-2xl bg-[var(--fill)]">
                 <div
                   className="flex transition-transform duration-300 ease-out"
                   style={{ transform: `translateX(-${img * 100}%)` }}
                 >
-                  {imgs.map((src, i) => (
-                    <img
-                      key={src}
-                      src={src}
-                      alt={`${exercise.name} demonstration ${i + 1}`}
-                      loading="lazy"
-                      draggable={false}
-                      className="aspect-square w-full shrink-0 select-none object-contain p-2"
-                    />
-                  ))}
+                  {imgs.map((src, i) =>
+                    broken.has(i) ? null : (
+                      <img
+                        key={src}
+                        src={src}
+                        alt={`${exercise.name} demonstration ${i + 1}`}
+                        loading="lazy"
+                        draggable={false}
+                        onError={() => setBroken((prev) => new Set(prev).add(i))}
+                        className="aspect-square w-full shrink-0 select-none object-contain p-2"
+                      />
+                    )
+                  )}
                 </div>
 
-                {imgs.length > 1 && (
+                {visible.length > 1 && (
                   <>
                     {img > 0 && (
                       <button
