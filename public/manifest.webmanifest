@@ -1,0 +1,17 @@
+{
+  "name": "Reprange — Minimal Workout Tracker",
+  "short_name": "Reprange",
+  "description": "A beautifully minimal workout tracker. Log sets, build streaks, see your strength grow.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfbfa",
+  "theme_color": "#fbfbfa",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
