@@ -17,6 +17,7 @@ import { useAuthUser } from "../hooks/useAuthUser";
 import ThemeToggle from "../components/ThemeToggle";
 import { useToast } from "../components/Toast";
 import { formatVolume, useUnit } from "../lib/units";
+import { goalHint, type UserProfile } from "../lib/profile";
 
 function Stat({
   value,
@@ -42,7 +43,40 @@ function Stat({
   );
 }
 
-export default function Today() {
+/**
+ * Weekly progress toward the target the athlete set during onboarding.
+ * Purely presentational, so it renders nothing without a profile.
+ */
+function WeekGoal({ profile, done }: { profile: UserProfile; done: number }) {
+  const target = Math.max(1, profile.daysPerWeek);
+  const reached = Math.min(done, target);
+  return (
+    <div className="panel p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="label">This week</span>
+        <span className="num text-[13px] font-semibold text-[var(--ink-2)]">
+          {reached} / {target}
+        </span>
+      </div>
+      <div className="mt-3 flex gap-1.5">
+        {Array.from({ length: target }, (_, i) => (
+          <div
+            key={i}
+            className="h-1.5 flex-1 rounded-full transition-colors"
+            style={{ background: i < reached ? "var(--ink)" : "var(--line)" }}
+          />
+        ))}
+      </div>
+      <p className="mt-3 text-[13px] leading-snug text-[var(--ink-2)]">
+        {reached >= target
+          ? "Weekly target met."
+          : `${target - reached} more to hit your target.`}
+      </p>
+    </div>
+  );
+}
+
+export default function Today({ profile }: { profile: UserProfile }) {
   const user = useAuthUser();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -133,6 +167,9 @@ export default function Today() {
             day{stats?.streak === 1 ? "" : "s"} in a row
           </span>
         </div>
+        <p className="mt-3 max-w-[38ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+          {goalHint(profile.goal)}
+        </p>
       </motion.div>
 
       {/* Active workout banner — live */}
@@ -198,6 +235,12 @@ export default function Today() {
           />
           <Stat value={stats.totalWorkouts} label="Workouts" />
           <Stat value={stats.totalSets} label="Sets" />
+        </motion.div>
+      )}
+
+      {stats && (
+        <motion.div {...rise(0.13)} className="mt-3">
+          <WeekGoal profile={profile} done={stats.weekWorkouts} />
         </motion.div>
       )}
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { SignOut, DownloadSimple, Trophy, Check } from "@phosphor-icons/react";
+import { SignOut, DownloadSimple, Trophy, Check, PencilSimple } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
 import {
   signOut,
@@ -13,6 +13,7 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
 import { formatVolume, toDisplay, useUnit, type Unit } from "../lib/units";
+import { EXPERIENCE_OPTIONS, GOAL_OPTIONS, type UserProfile } from "../lib/profile";
 
 function SettingRow({
   label,
@@ -34,7 +35,7 @@ function SettingRow({
   );
 }
 
-export default function Profile() {
+export default function Profile({ profile }: { profile: UserProfile }) {
   const user = useAuthUser();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -187,6 +188,56 @@ export default function Profile() {
           </div>
         )}
       </div>
+
+      {/* What they told us at setup */}
+      <h2 className="label mt-10 mb-3">Your setup</h2>
+      <div className="panel divide-y divide-[var(--line)]">
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-[15px] font-medium">
+              {EXPERIENCE_OPTIONS.find((e) => e.value === profile.experience)?.label ??
+                "Experience"}
+            </p>
+            <p className="label mt-0.5 normal-case">Training background</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-[15px] font-medium">
+              {GOAL_OPTIONS.find((g) => g.value === profile.goal)?.label ?? "Goal"}
+            </p>
+            <p className="label mt-0.5 normal-case">Training goal</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="num text-[15px] font-medium">{profile.daysPerWeek} days</p>
+            <p className="label mt-0.5 normal-case">Weekly target</p>
+          </div>
+        </div>
+        {profile.equipment.length > 0 && (
+          <div className="px-4 py-3.5">
+            <p className="text-[15px] font-medium">Equipment</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {profile.equipment.map((e) => (
+                <span
+                  key={e}
+                  className="rounded-lg px-2.5 py-1 text-[12px] font-medium"
+                  style={{ background: "var(--fill)", color: "var(--ink-2)" }}
+                >
+                  {e}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <button
+        onClick={() => navigate("/onboarding")}
+        className="btn-line mt-3 w-full"
+      >
+        <PencilSimple size={16} /> Edit setup
+      </button>
 
       {/* Settings */}
       <h2 className="label mt-10 mb-3">Settings</h2>
