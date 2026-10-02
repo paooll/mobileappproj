@@ -112,7 +112,7 @@ export default function App() {
         path="/app/workout/:id"
         element={
           <RequireAuth>
-            {() => <ActiveWorkout />}
+            {(profile) => <ActiveWorkout profile={profile} />}
           </RequireAuth>
         }
       />

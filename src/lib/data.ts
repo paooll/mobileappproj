@@ -25,6 +25,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { ensureExerciseCatalog, type Exercise } from "./exerciseDb";
+import type { RecentArchive } from "./coach";
 
 export type { Exercise };
 
@@ -231,6 +232,7 @@ export async function removeSet(workoutId: string, setId: string) {
 }
 
 export async function finishWorkout(workoutId: string) {
+  invalidateRecentArchive();
   await setDoc(
     doc(db, "workouts", workoutId),
     { completed: true, completedAt: Date.now() },
@@ -239,9 +241,60 @@ export async function finishWorkout(workoutId: string) {
 }
 
 export async function deleteWorkout(workoutId: string) {
+  invalidateRecentArchive();
   const setsSnap = await getDocs(collection(db, "workouts", workoutId, "sets"));
   await Promise.all(setsSnap.docs.map((d) => deleteDoc(d.ref)));
   await deleteDoc(doc(db, "workouts", workoutId));
+}
+
+/* ---------- Recent history for the progressive overload coach ---------- */
+
+/**
+ * Reads the most recent completed workouts and their sets, capped so the cost
+ * stays flat no matter how much history exists. Cached in memory per user for a
+ * few minutes because the coach asks for it every time an exercise is picked.
+ */
+const RECENT_WORKOUT_LIMIT = 12;
+let recentCache: { uid: string; at: number; archive: RecentArchive } | null = null;
+const RECENT_TTL = 5 * 60 * 1000;
+
+export function invalidateRecentArchive() {
+  recentCache = null;
+}
+
+export async function loadRecentArchive(userId: string): Promise<RecentArchive> {
+  const now = Date.now();
+  if (recentCache && recentCache.uid === userId && now - recentCache.at < RECENT_TTL) {
+    return recentCache.archive;
+  }
+
+  const snap = await getDocs(
+    query(
+      collection(db, "workouts"),
+      where("userId", "==", userId),
+      orderBy("date", "desc"),
+      limit(RECENT_WORKOUT_LIMIT)
+    )
+  );
+  const workouts = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Workout)
+    .filter((w) => w.completed)
+    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+
+  const setsByWorkout = new Map<string, WorkoutSet[]>();
+  for (const w of workouts) {
+    const setsSnap = await getDocs(
+      query(collection(db, "workouts", w.id, "sets"), orderBy("order"))
+    );
+    setsByWorkout.set(
+      w.id,
+      setsSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkoutSet)
+    );
+  }
+
+  const archive: RecentArchive = { workouts, setsByWorkout };
+  recentCache = { uid: userId, at: now, archive };
+  return archive;
 }
 
 /* ---------- Last-set memory: prefill weight/reps per exercise ---------- */

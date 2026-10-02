@@ -5,21 +5,33 @@ import { CaretLeft, X, Plus, Check, MagnifyingGlass, Info } from "@phosphor-icon
 import {
   getWorkout,
   loadExercises,
+  loadRecentArchive,
   addSet,
   removeSet,
   finishWorkout,
-  getLastSetFor,
   subscribeSets,
   type Workout,
   type WorkoutSet,
   type Exercise,
 } from "../lib/data";
+import {
+  buildCoachIndex,
+  referenceWeight,
+  suggestNext,
+  type CoachSession,
+  type RecentArchive,
+} from "../lib/coach";
+import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
+import CoachHint from "../components/CoachHint";
 import ExerciseDetail from "../components/ExerciseDetail";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
 
-export default function ActiveWorkout() {
+// Resolved once at module load so render stays free of impure calls.
+const TODAY = new Date().toISOString().slice(0, 10);
+
+export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthUser();
@@ -35,10 +47,33 @@ export default function ActiveWorkout() {
   const [selected, setSelected] = useState<Exercise | null>(null);
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
-  const [prefilling, setPrefilling] = useState(false);
   const [detailEx, setDetailEx] = useState<Exercise | null>(null);
+  // Keyed by uid so a sign-out or account switch shows the loading state again
+  const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
+  const [coachHidden, setCoachHidden] = useState(false);
   const { toast } = useToast();
   const [unit] = useUnit();
+
+  const ready = !!user && loaded?.uid === user.uid;
+  const historyLoading = !!user && !ready;
+  const archive = ready ? loaded.archive : null;
+
+  // Coach history: one bounded, cached read, then derived in memory
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    loadRecentArchive(user.uid)
+      .then((a) => {
+        if (!cancelled) setLoaded({ uid: user.uid, archive: a });
+      })
+      .catch(() => {
+        // The coach is an assist, never a blocker. Without history it just asks for a baseline.
+        if (!cancelled) setLoaded({ uid: user.uid, archive: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Load workout + exercise catalog once
   useEffect(() => {
@@ -53,7 +88,11 @@ export default function ActiveWorkout() {
     return subscribeSets(id, setLiveSets);
   }, [id]);
 
-  const sets = liveSets.length > 0 ? liveSets : (workout?.sets ?? []);
+  // Stable identity keeps the derived memos below from re-running every render
+  const sets = useMemo(
+    () => (liveSets.length > 0 ? liveSets : (workout?.sets ?? [])),
+    [liveSets, workout]
+  );
 
   const grouped = useMemo(() => {
     const map = new Map<string, WorkoutSet[]>();
@@ -73,22 +112,56 @@ export default function ActiveWorkout() {
       .slice(0, 40);
   }, [exercises, search]);
 
-  const chooseExercise = async (ex: Exercise) => {
+  // One pass over the archive: heaviest set per exercise + per exercise sessions
+  const coachIndex = useMemo(() => buildCoachIndex(archive), [archive]);
+
+  const lastFor = (name: string) => coachIndex.last.get(name) ?? null;
+
+  /** Past sessions for the selected exercise, most recent first, this session on top. */
+  const history = useMemo<CoachSession[]>(() => {
+    if (!selected) return [];
+    const past = coachIndex.history.get(selected.name) ?? [];
+    const today: CoachSession = {
+      date: workout?.date ?? TODAY,
+      sets: sets
+        .filter((s) => s.exerciseName === selected.name)
+        .map((s) => ({ weight: s.weight, reps: s.reps })),
+    };
+    return today.sets.length > 0 ? [today, ...past] : past;
+  }, [selected, coachIndex, sets, workout?.date]);
+
+  const suggestion = useMemo(() => {
+    if (!selected) return null;
+    return suggestNext({
+      history,
+      goal: profile.goal,
+      experience: profile.experience,
+      equipment: selected.equipment,
+    });
+  }, [selected, history, profile.goal, profile.experience]);
+
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    setWeight(String(toDisplay(suggestion.weight, unit)));
+    setReps(String(suggestion.reps));
+  };
+
+  const chooseExercise = (ex: Exercise) => {
     setSelected(ex);
     setPicker(false);
     setSearch("");
-    setWeight("");
-    setReps("");
-    // Prefill from personal best
-    if (user) {
-      setPrefilling(true);
-      const last = await getLastSetFor(user.uid, ex.name);
-      if (last) {
-        setWeight(String(toDisplay(last.weight, unit)));
-        setReps(String(last.reps));
-      }
-      setPrefilling(false);
-    }
+    setCoachHidden(false);
+    // Prefill from the coach when it has something to say, else the best on record
+    const next = suggestNext({
+      history: coachIndex.history.get(ex.name) ?? [],
+      goal: profile.goal,
+      experience: profile.experience,
+      equipment: ex.equipment,
+    });
+    const fallback = coachIndex.last.get(ex.name) ?? null;
+    const prefill = next ?? fallback;
+    setWeight(prefill ? String(toDisplay(prefill.weight, unit)) : "");
+    setReps(prefill ? String(prefill.reps) : "");
   };
 
   if (!workout && liveSets.length === 0) {
@@ -112,7 +185,7 @@ export default function ActiveWorkout() {
     }
     try {
       await addSet(id, selected.name, w, r);
-      // Keep last values for the next set — bumping weight is usually all you change
+      // Keep the inputs as they are — the coach recalculates against the new set
     } catch (err) {
       console.error(err);
       toast("Couldn't save the set. Check your connection.", "error");
@@ -132,7 +205,11 @@ export default function ActiveWorkout() {
   };
 
   return (
-    <div className="min-h-[100dvh] px-5 pb-44 pt-[max(env(safe-area-inset-top),24px)]">
+    <div
+      className={`min-h-[100dvh] px-5 pt-[max(env(safe-area-inset-top),24px)] ${
+        selected && !coachHidden && !picker ? "pb-[248px]" : "pb-44"
+      }`}
+    >
       <header className="flex items-center justify-between">
         <button
           onClick={() => navigate("/app")}
@@ -222,27 +299,35 @@ export default function ActiveWorkout() {
                 />
               </div>
               <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
-                {filtered.map((e) => (
-                  <div
-                    key={e.id}
-                    className="flex items-center justify-between rounded-lg px-3 transition-colors active:bg-[var(--fill)]"
-                  >
-                    <button
-                      onClick={() => chooseExercise(e)}
-                      className="tab flex-1 py-2.5 text-left text-[15px]"
+                {filtered.map((e) => {
+                  const last = lastFor(e.name);
+                  return (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between rounded-lg px-3 transition-colors active:bg-[var(--fill)]"
                     >
-                      <span className="truncate">{e.name}</span>
-                    </button>
-                    <span className="label mr-1 shrink-0">{e.muscleGroup}</span>
-                    <button
-                      onClick={() => setDetailEx(e)}
-                      className="tab shrink-0 p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
-                      aria-label={`How to do ${e.name}`}
-                    >
-                      <Info size={15} />
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        onClick={() => chooseExercise(e)}
+                        className="tab min-w-0 flex-1 py-2.5 text-left"
+                      >
+                        <span className="block truncate text-[15px]">{e.name}</span>
+                        {last && (
+                          <span className="num block text-[12px] text-[var(--ink-3)]">
+                            last {toDisplay(last.weight, unit)} {unit} × {last.reps}
+                          </span>
+                        )}
+                      </button>
+                      <span className="label ml-2 shrink-0">{e.muscleGroup}</span>
+                      <button
+                        onClick={() => setDetailEx(e)}
+                        className="tab shrink-0 p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+                        aria-label={`How to do ${e.name}`}
+                      >
+                        <Info size={15} />
+                      </button>
+                    </div>
+                  );
+                })}
                 {filtered.length === 0 && (
                   <p className="py-6 text-center text-[14px] text-[var(--ink-3)]">
                     No exercises match “{search}”
@@ -266,12 +351,26 @@ export default function ActiveWorkout() {
                   {selected?.muscleGroup ?? "Tap to pick"}
                 </span>
               </button>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              {selected && !coachHidden && (
+                <div className="mt-2">
+                  <CoachHint
+                    loading={historyLoading}
+                    hasHistory={history.length > 0}
+                    suggestion={suggestion}
+                    unit={unit}
+                    compareWeight={referenceWeight(history)}
+                    onUse={applySuggestion}
+                    onDismiss={() => setCoachHidden(true)}
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
                 <input
                   className="field num"
                   type="number"
                   inputMode="decimal"
-                  placeholder={prefilling ? "…" : unit}
+                  placeholder={unit}
+                  aria-label="Weight"
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                 />
@@ -279,7 +378,8 @@ export default function ActiveWorkout() {
                   className="field num"
                   type="number"
                   inputMode="numeric"
-                  placeholder={prefilling ? "…" : "reps"}
+                  placeholder="reps"
+                  aria-label="Reps"
                   value={reps}
                   onChange={(e) => setReps(e.target.value)}
                 />
