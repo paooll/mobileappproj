@@ -10,13 +10,18 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
 import ThemeToggle from "../components/ThemeToggle";
+import WorkoutCalendar from "../components/WorkoutCalendar";
+import { formatVolume, useUnit } from "../lib/units";
 
 export default function History() {
   const user = useAuthUser();
   const [workouts, setWorkouts] = useState<Workout[] | null>(null);
   const [setsCount, setSetsCount] = useState<Map<string, number>>(new Map());
+  const [setsVolume, setSetsVolume] = useState<Map<string, number>>(new Map());
+  const [dayFilter, setDayFilter] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [unit] = useUnit();
 
   const remove = async (id: string) => {
     if (!window.confirm("Delete this workout and all its sets? This can't be undone."))
@@ -50,10 +55,22 @@ export default function History() {
     const unsubs = ids.map((wid) =>
       subscribeSets(wid, (sets) => {
         setSetsCount((prev) => new Map(prev).set(wid, sets.length));
+        setSetsVolume((prev) =>
+          new Map(prev).set(
+            wid,
+            sets.reduce((sum, s) => sum + s.weight * s.reps, 0)
+          )
+        );
       })
     );
     return () => unsubs.forEach((u) => u());
   }, [user, completedIds]);
+
+  const workoutDates = useMemo(() => new Set(completed.map((w) => w.date)), [completed]);
+  const shown = useMemo(
+    () => (dayFilter ? completed.filter((w) => w.date === dayFilter) : completed),
+    [completed, dayFilter]
+  );
 
   if (workouts === null) {
     return (
@@ -78,6 +95,24 @@ export default function History() {
         {completed.length} completed {completed.length === 1 ? "workout" : "workouts"}
       </p>
 
+      {completed.length > 0 && (
+        <WorkoutCalendar
+          dates={workoutDates}
+          selected={dayFilter}
+          onSelect={setDayFilter}
+        />
+      )}
+
+      {dayFilter && (
+        <p className="label mt-6 normal-case">
+          Showing {new Date(`${dayFilter}T00:00:00`).toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })}
+        </p>
+      )}
+
       {completed.length === 0 ? (
         <div className="panel mt-8 flex flex-col items-center px-6 py-12 text-center">
           <span className="num text-[40px] font-bold text-[var(--ink-3)]">0</span>
@@ -85,9 +120,21 @@ export default function History() {
             No sessions yet. Pick a quick start on Today and log your first set.
           </p>
         </div>
+      ) : shown.length === 0 ? (
+        <div className="panel mt-6 flex flex-col items-center px-6 py-10 text-center">
+          <p className="max-w-[26ch] text-[15px] text-[var(--ink-2)]">
+            Nothing logged on that day.
+          </p>
+          <button onClick={() => setDayFilter(null)} className="btn-line mt-4">
+            Back to all
+          </button>
+        </div>
       ) : (
         <div className="panel mt-6 divide-y divide-[var(--line)]">
-          {completed.map((w) => (
+          {shown.map((w) => {
+            const vol = setsVolume.get(w.id);
+            const volText = vol ? formatVolume(vol, unit) : null;
+            return (
             <div key={w.id} className="flex items-center justify-between px-4 py-3.5">
               <button
                 className="tab flex-1 text-left transition-opacity active:opacity-60"
@@ -97,6 +144,7 @@ export default function History() {
                 <p className="label mt-0.5 normal-case">
                   {w.date}
                   {setsCount.has(w.id) ? ` · ${setsCount.get(w.id)} sets` : ""}
+                  {volText ? ` · ${volText.value} ${volText.suffix}` : ""}
                 </p>
               </button>
               <button
@@ -107,7 +155,8 @@ export default function History() {
                 <Trash size={16} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

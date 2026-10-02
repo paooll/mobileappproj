@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MagnifyingGlass, ArrowClockwise } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowClockwise, FunnelSimple } from "@phosphor-icons/react";
 import { loadExercises, type Exercise } from "../lib/data";
 import ThemeToggle from "../components/ThemeToggle";
 import ExerciseDetail from "../components/ExerciseDetail";
@@ -7,10 +7,42 @@ import { AnimatePresence } from "framer-motion";
 
 const GROUPS = ["All", "Chest", "Back", "Shoulders", "Arms", "Legs", "Abs", "Other"];
 
+const CORE_GROUPS = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Abs"];
+
+/** Horizontal scroll-snap row of filter chips, matching the app's quiet-button style. */
+function ChipRow({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {options.map((o) => (
+        <button
+          key={o}
+          onClick={() => onChange(o)}
+          aria-pressed={value === o}
+          className="btn-quiet shrink-0"
+          style={value === o ? { background: "var(--ink)", color: "var(--bg)" } : undefined}
+        >
+          {o === "All" ? label : o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Exercises() {
   const [exercises, setExercises] = useState<Exercise[] | null>(null);
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState("All");
+  const [equipment, setEquipment] = useState("All");
   const [detail, setDetail] = useState<Exercise | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -27,16 +59,24 @@ export default function Exercises() {
 
   useEffect(load, []);
 
+  // Equipment options come from the catalog itself, so new equipment types
+  // appear automatically as the dataset grows.
+  const equipmentOptions = useMemo(() => {
+    const found = new Set<string>();
+    for (const e of exercises ?? []) if (e.equipment) found.add(e.equipment);
+    return ["All", ...[...found].sort()];
+  }, [exercises]);
+
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = (exercises ?? []).filter((e) => {
       const matchesSearch = !q || e.name.toLowerCase().includes(q);
       const matchesGroup =
         group === "All" ||
-        (group === "Other" &&
-          !["Chest", "Back", "Shoulders", "Arms", "Legs", "Abs"].includes(e.muscleGroup)) ||
+        (group === "Other" && !CORE_GROUPS.includes(e.muscleGroup)) ||
         e.muscleGroup === group;
-      return matchesSearch && matchesGroup;
+      const matchesEquipment = equipment === "All" || e.equipment === equipment;
+      return matchesSearch && matchesGroup && matchesEquipment;
     });
 
     const map = new Map<string, Exercise[]>();
@@ -74,22 +114,33 @@ export default function Exercises() {
       </div>
 
       {/* Muscle group chips */}
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {GROUPS.map((g) => (
-          <button
-            key={g}
-            onClick={() => setGroup(g)}
-            className="btn-quiet shrink-0"
-            style={
-              group === g
-                ? { background: "var(--ink)", color: "var(--bg)" }
-                : undefined
-            }
-          >
-            {g}
-          </button>
-        ))}
+      <div className="mt-3">
+        <ChipRow options={GROUPS} value={group} onChange={setGroup} label="All muscles" />
       </div>
+
+      {/* Equipment chips — only useful once the catalog has loaded */}
+      {equipmentOptions.length > 1 && (
+        <div className="mt-2">
+          <ChipRow
+            options={equipmentOptions}
+            value={equipment}
+            onChange={setEquipment}
+            label="All equipment"
+          />
+        </div>
+      )}
+
+      {(group !== "All" || equipment !== "All") && (
+        <button
+          onClick={() => {
+            setGroup("All");
+            setEquipment("All");
+          }}
+          className="tab mt-2 text-[13px] font-medium text-[var(--ink-2)] underline underline-offset-4 active:opacity-60"
+        >
+          Reset filters
+        </button>
+      )}
 
       {failed && (
         <div className="panel mt-8 flex flex-col items-center gap-3 p-6 text-center">
@@ -109,7 +160,25 @@ export default function Exercises() {
             <div key={i} className="h-12 animate-pulse rounded-xl bg-[var(--fill)]" />
           ))}
         </div>
-      ) : exercises !== null ? (
+      ) : exercises !== null ? grouped.length === 0 ? (
+        <div className="panel mt-8 flex flex-col items-center gap-3 px-6 py-12 text-center">
+          <FunnelSimple size={24} className="text-[var(--ink-3)]" />
+          <p className="text-[15px] font-medium">No exercises match</p>
+          <p className="max-w-[28ch] text-[13px] leading-relaxed text-[var(--ink-2)]">
+            Try a different muscle group or clear the equipment filter.
+          </p>
+          <button
+            onClick={() => {
+              setSearch("");
+              setGroup("All");
+              setEquipment("All");
+            }}
+            className="btn-line"
+          >
+            Clear filters
+          </button>
+        </div>
+      ) : (
         grouped.map(([muscle, list]) => (
           <div key={muscle} className="mt-8">
             <h2 className="label mb-2">{muscle}</h2>

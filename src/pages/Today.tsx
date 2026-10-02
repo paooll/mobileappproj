@@ -16,12 +16,26 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import ThemeToggle from "../components/ThemeToggle";
 import { useToast } from "../components/Toast";
+import { formatVolume, useUnit } from "../lib/units";
 
-function Stat({ value, label }: { value?: string | number; label: string }) {
+function Stat({
+  value,
+  suffix,
+  label,
+}: {
+  value?: string | number;
+  suffix?: string;
+  label: string;
+}) {
   return (
     <div className="panel flex flex-col gap-0.5 p-4">
       <span className="num text-[26px] font-semibold leading-none">
         {value ?? "–"}
+        {suffix && (
+          <span className="ml-0.5 text-[13px] font-medium text-[var(--ink-3)]">
+            {suffix}
+          </span>
+        )}
       </span>
       <span className="label mt-1">{label}</span>
     </div>
@@ -46,6 +60,7 @@ export default function Today() {
   const [setsByWorkout, setSetsByWorkout] = useState<Map<string, WorkoutSet[]>>(new Map());
   const [starting, setStarting] = useState(false);
   const { toast } = useToast();
+  const [unit] = useUnit();
 
   // Realtime: active workout
   useEffect(() => {
@@ -177,11 +192,8 @@ export default function Today() {
         <motion.div {...rise(0.12)} className="grid grid-cols-2 gap-3">
           <Stat value={stats.weekWorkouts} label="This week" />
           <Stat
-            value={
-              stats.totalVolume >= 1000
-                ? `${(stats.totalVolume / 1000).toFixed(1)} t`
-                : `${stats.totalVolume} kg`
-            }
+            value={formatVolume(stats.totalVolume, unit).value}
+            suffix={formatVolume(stats.totalVolume, unit).suffix}
             label="Volume"
           />
           <Stat value={stats.totalWorkouts} label="Workouts" />

@@ -310,6 +310,59 @@ export function computeStats(workouts: Workout[], setsByWorkout: Map<string, Wor
   return { totalWorkouts: completed.length, totalSets, totalVolume, streak, weekWorkouts };
 }
 
+/* ---------- Archive: every set, for export and personal records ---------- */
+
+export interface ExerciseBest {
+  exerciseName: string;
+  weight: number; // heaviest set ever logged, in kg
+  reps: number;
+  date: string;
+}
+
+/** Loads every set the athlete has logged. One-shot read, used by Profile. */
+export async function loadArchive(
+  userId: string
+): Promise<{ workouts: Workout[]; setsByWorkout: Map<string, WorkoutSet[]> }> {
+  const snap = await getDocs(query(collection(db, "workouts"), where("userId", "==", userId)));
+  const workouts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workout);
+  const setsByWorkout = new Map<string, WorkoutSet[]>();
+  for (const w of workouts) {
+    if (!w.completed) continue;
+    const setsSnap = await getDocs(
+      query(collection(db, "workouts", w.id, "sets"), orderBy("order"))
+    );
+    setsByWorkout.set(
+      w.id,
+      setsSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkoutSet)
+    );
+  }
+  return { workouts, setsByWorkout };
+}
+
+/** Heaviest set per exercise across the whole archive. */
+export function computePersonalRecords(
+  workouts: Workout[],
+  setsByWorkout: Map<string, WorkoutSet[]>
+): ExerciseBest[] {
+  const dateOf = new Map(workouts.map((w) => [w.id, w.date]));
+  const best = new Map<string, ExerciseBest>();
+  for (const [wid, sets] of setsByWorkout) {
+    for (const s of sets) {
+      if (s.weight <= 0) continue;
+      const cur = best.get(s.exerciseName);
+      if (!cur || s.weight > cur.weight) {
+        best.set(s.exerciseName, {
+          exerciseName: s.exerciseName,
+          weight: s.weight,
+          reps: s.reps,
+          date: dateOf.get(wid) ?? "",
+        });
+      }
+    }
+  }
+  return [...best.values()].sort((a, b) => b.weight - a.weight);
+}
+
 /* ---------- Workout templates: one-tap start ---------- */
 
 export interface Template {

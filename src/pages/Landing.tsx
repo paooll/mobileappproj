@@ -125,7 +125,7 @@ export default function Landing() {
                     animate: { opacity: 1, y: 0 },
                     transition: { duration: 0.7, delay: 0.1, ease },
                   })}
-              className="mt-4 max-w-[36ch] text-[16px] leading-relaxedtext-[var(--ink-2)]">
+              className="mt-4 max-w-[36ch] text-[16px] leading-relaxed text-[var(--ink-2)]">
               A workout tracker that stays out of the way of the work. Two taps
               per set, one number that keeps you honest.
             </motion.p>
@@ -166,7 +166,7 @@ export default function Landing() {
         <section className="border-t border-[var(--line)] py-20">
           <div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
             {[
-              ["2 taps", "to log a set. Weight, reps, done — under the rest clock."],
+              ["2 taps", "to log a set. Weight, reps, done. All under the rest clock."],
               ["1 number", "your streak. Show up and it grows. Miss a day, start over."],
               ["0 clutter", "no feeds, no badges, no noise. Sets and progress only."],
             ].map(([head, body], i) => (

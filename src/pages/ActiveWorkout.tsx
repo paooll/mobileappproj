@@ -17,6 +17,7 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
 import ExerciseDetail from "../components/ExerciseDetail";
+import { fromDisplay, toDisplay, useUnit } from "../lib/units";
 
 export default function ActiveWorkout() {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +38,7 @@ export default function ActiveWorkout() {
   const [prefilling, setPrefilling] = useState(false);
   const [detailEx, setDetailEx] = useState<Exercise | null>(null);
   const { toast } = useToast();
+  const [unit] = useUnit();
 
   // Load workout + exercise catalog once
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function ActiveWorkout() {
       setPrefilling(true);
       const last = await getLastSetFor(user.uid, ex.name);
       if (last) {
-        setWeight(String(last.weight));
+        setWeight(String(toDisplay(last.weight, unit)));
         setReps(String(last.reps));
       }
       setPrefilling(false);
@@ -102,7 +104,7 @@ export default function ActiveWorkout() {
 
   const add = async () => {
     if (!id || !selected) return;
-    const w = parseFloat(weight);
+    const w = fromDisplay(parseFloat(weight), unit);
     const r = parseInt(reps, 10);
     if (!isFinite(w) || w < 0 || !Number.isInteger(r) || r < 1) {
       toast("Enter a valid weight and at least 1 rep.", "error");
@@ -172,8 +174,10 @@ export default function ActiveWorkout() {
                   >
                     <span className="label w-6">{i + 1}</span>
                     <span className="num text-[17px] font-semibold">
-                      {s.weight}
-                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">kg</span>
+                      {toDisplay(s.weight, unit)}
+                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
+                        {unit}
+                      </span>
                       <span className="mx-2 text-[var(--ink-3)]">×</span>
                       {s.reps}
                       <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">reps</span>
@@ -267,7 +271,7 @@ export default function ActiveWorkout() {
                   className="field num"
                   type="number"
                   inputMode="decimal"
-                  placeholder={prefilling ? "…" : "kg"}
+                  placeholder={prefilling ? "…" : unit}
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                 />
