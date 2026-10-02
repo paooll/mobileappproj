@@ -9,6 +9,7 @@ import Today from "./pages/Today";
 import ActiveWorkout from "./pages/ActiveWorkout";
 import History from "./pages/History";
 import Progress from "./pages/Progress";
+import Brain from "./pages/Brain";
 import Exercises from "./pages/Exercises";
 import Profile from "./pages/Profile";
 import TabBar from "./components/TabBar";
@@ -122,6 +123,14 @@ export default function App() {
         element={
           <RequireAuth>
             {() => <History />}
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/app/brain"
+        element={
+          <RequireAuth>
+            {(profile) => <Brain profile={profile} />}
           </RequireAuth>
         }
       />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Play, CaretRight, ChartLine } from "@phosphor-icons/react";
+import { Play, CaretRight, ChartLine, Brain as BrainIcon } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import {
   subscribeActiveWorkout,
@@ -258,6 +258,26 @@ export default function Today({ profile }: { profile: UserProfile }) {
               <div>
                 <p className="text-[15px] font-semibold">Progress</p>
                 <p className="label mt-0.5 normal-case">Strength trend and weekly volume</p>
+              </div>
+            </div>
+            <CaretRight size={18} className="text-[var(--ink-3)]" />
+          </button>
+        </motion.div>
+      )}
+
+      {stats && stats.totalWorkouts > 0 && (
+        <motion.div {...rise(0.145)} className="mt-3">
+          <button
+            onClick={() => navigate("/app/brain")}
+            className="panel flex w-full items-center justify-between p-4 text-left transition-transform active:scale-[0.98]"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--fill)]">
+                <BrainIcon size={17} />
+              </span>
+              <div>
+                <p className="text-[15px] font-semibold">Training brain</p>
+                <p className="label mt-0.5 normal-case">Ask why a lift has stalled</p>
               </div>
             </div>
             <CaretRight size={18} className="text-[var(--ink-3)]" />

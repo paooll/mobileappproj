@@ -123,8 +123,28 @@ export function friendlyAuthError(err: unknown, mode: "signin" | "signup" | "goo
 
 /* ---------- Exercises ---------- */
 
+let catalogCache: { at: number; value: Exercise[] } | null = null;
+let catalogInFlight: Promise<Exercise[]> | null = null;
+const CATALOG_TTL = 10 * 60 * 1000;
+
+/**
+ * The catalog is 876 documents out of Firestore. Several screens need it, so
+ * share one read instead of paying for it again on every mount.
+ */
 export async function loadExercises(): Promise<Exercise[]> {
-  return ensureExerciseCatalog();
+  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL) return catalogCache.value;
+  if (catalogInFlight) return catalogInFlight;
+
+  catalogInFlight = ensureExerciseCatalog()
+    .then((value) => {
+      catalogCache = { at: Date.now(), value };
+      return value;
+    })
+    .finally(() => {
+      catalogInFlight = null;
+    });
+
+  return catalogInFlight;
 }
 
 /* ---------- Workouts: realtime ---------- */
