@@ -228,11 +228,13 @@ export async function addSet(
 }
 
 export async function removeSet(workoutId: string, setId: string) {
+  invalidateArchive();
   await deleteDoc(doc(db, "workouts", workoutId, "sets", setId));
 }
 
 export async function finishWorkout(workoutId: string) {
   invalidateRecentArchive();
+  invalidateArchive();
   await setDoc(
     doc(db, "workouts", workoutId),
     { completed: true, completedAt: Date.now() },
@@ -242,6 +244,7 @@ export async function finishWorkout(workoutId: string) {
 
 export async function deleteWorkout(workoutId: string) {
   invalidateRecentArchive();
+  invalidateArchive();
   const setsSnap = await getDocs(collection(db, "workouts", workoutId, "sets"));
   await Promise.all(setsSnap.docs.map((d) => deleteDoc(d.ref)));
   await deleteDoc(doc(db, "workouts", workoutId));
@@ -372,10 +375,26 @@ export interface ExerciseBest {
   date: string;
 }
 
+const ARCHIVE_TTL = 60 * 1000;
+let archiveCache: {
+  uid: string;
+  at: number;
+  archive: { workouts: Workout[]; setsByWorkout: Map<string, WorkoutSet[]> };
+} | null = null;
+
+export function invalidateArchive() {
+  archiveCache = null;
+}
+
 /** Loads every set the athlete has logged. One-shot read, used by Profile. */
 export async function loadArchive(
   userId: string
 ): Promise<{ workouts: Workout[]; setsByWorkout: Map<string, WorkoutSet[]> }> {
+  // The full archive is the most expensive read in the app, and more than one
+  // page needs it, so share it for a short window instead of refetching.
+  if (archiveCache && archiveCache.uid === userId && Date.now() - archiveCache.at < ARCHIVE_TTL) {
+    return archiveCache.archive;
+  }
   const snap = await getDocs(query(collection(db, "workouts"), where("userId", "==", userId)));
   const workouts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workout);
   const setsByWorkout = new Map<string, WorkoutSet[]>();
@@ -389,6 +408,7 @@ export async function loadArchive(
       setsSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkoutSet)
     );
   }
+  archiveCache = { uid: userId, at: Date.now(), archive: { workouts, setsByWorkout } };
   return { workouts, setsByWorkout };
 }
 

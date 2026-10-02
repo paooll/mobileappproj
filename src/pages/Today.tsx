@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Play, CaretRight } from "@phosphor-icons/react";
+import { Play, CaretRight, ChartLine } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import {
   subscribeActiveWorkout,
@@ -241,6 +241,27 @@ export default function Today({ profile }: { profile: UserProfile }) {
       {stats && (
         <motion.div {...rise(0.13)} className="mt-3">
           <WeekGoal profile={profile} done={stats.weekWorkouts} />
+        </motion.div>
+      )}
+
+      {/* Progress: strength trend and weekly volume */}
+      {stats && stats.totalWorkouts > 0 && (
+        <motion.div {...rise(0.14)} className="mt-3">
+          <button
+            onClick={() => navigate("/app/progress")}
+            className="panel flex w-full items-center justify-between p-4 text-left transition-transform active:scale-[0.98]"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--fill)]">
+                <ChartLine size={17} />
+              </span>
+              <div>
+                <p className="text-[15px] font-semibold">Progress</p>
+                <p className="label mt-0.5 normal-case">Strength trend and weekly volume</p>
+              </div>
+            </div>
+            <CaretRight size={18} className="text-[var(--ink-3)]" />
+          </button>
         </motion.div>
       )}
 

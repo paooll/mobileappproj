@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { SignOut, DownloadSimple, Trophy, Check, PencilSimple } from "@phosphor-icons/react";
+import { SignOut, DownloadSimple, Trophy, Check, PencilSimple, ChartLine } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
 import {
   signOut,
@@ -380,6 +380,13 @@ export default function Profile({ profile }: { profile: UserProfile }) {
 
       {/* Personal records */}
       <h2 className="label mt-10 mb-3">Personal records</h2>
+      <button
+        onClick={() => navigate("/app/progress")}
+        className="btn-line mb-3 w-full"
+        disabled={loading}
+      >
+        <ChartLine size={16} /> See progress
+      </button>
       {loading ? (
         <div className="panel flex flex-col gap-2 p-4">
           {[0, 1, 2].map((i) => (
