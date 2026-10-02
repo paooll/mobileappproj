@@ -13,6 +13,14 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
 import { formatVolume, toDisplay, useUnit, type Unit } from "../lib/units";
+import {
+  DEFAULT_REST,
+  REST_PRESETS,
+  formatRest,
+  loadRestSettings,
+  saveRestSettings,
+  type RestSettings,
+} from "../lib/restTimer";
 import { EXPERIENCE_OPTIONS, GOAL_OPTIONS, type UserProfile } from "../lib/profile";
 
 function SettingRow({
@@ -47,6 +55,35 @@ export default function Profile({ profile }: { profile: UserProfile }) {
   );
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
+
+  // Rest timer preferences, stored on the same profile doc
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    loadRestSettings(user.uid).then((s) => {
+      if (!cancelled) setRest(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const updateRest = useCallback(
+    async (patch: Partial<RestSettings>) => {
+      if (!user) return;
+      const previous = rest;
+      setRest((prev) => ({ ...prev, ...patch })); // instant feedback, revert on failure
+      try {
+        await saveRestSettings(user.uid, patch);
+      } catch (err) {
+        console.error(err);
+        setRest(previous);
+        toast("Couldn't save that rest setting. Try again.", "error");
+      }
+    },
+    [rest, user, toast]
+  );
 
   // Load the full archive once — needed for accurate stats, PRs, and export.
   useEffect(() => {
@@ -272,6 +309,52 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             ))}
           </div>
         </SettingRow>
+
+        <SettingRow
+          label="Rest timer"
+          hint={`Starts after every set you log. Currently ${formatRest(
+            rest.seconds * 1000
+          )}.`}
+        >
+          <button
+            onClick={() => updateRest({ autoStart: !rest.autoStart })}
+            aria-pressed={rest.autoStart}
+            className="tab relative flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-[12px] font-semibold transition-colors"
+            style={{
+              background: rest.autoStart ? "var(--ink)" : "var(--fill)",
+              color: rest.autoStart ? "var(--bg)" : "var(--ink-2)",
+            }}
+          >
+            {rest.autoStart ? "On" : "Off"}
+          </button>
+        </SettingRow>
+
+        <div className="panel p-4">
+          <p className="text-[15px] font-medium">Rest between sets</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-[var(--ink-2)]">
+            Longer for heavy compounds, shorter for accessories and circuits.
+          </p>
+          <div
+            className="mt-3 flex gap-1.5"
+            role="group"
+            aria-label="Rest duration"
+          >
+            {REST_PRESETS.map((s) => (
+              <button
+                key={s}
+                onClick={() => updateRest({ seconds: s })}
+                aria-pressed={rest.seconds === s}
+                className="tab num flex h-11 flex-1 items-center justify-center rounded-xl text-[13px] font-semibold transition-colors"
+                style={{
+                  background: rest.seconds === s ? "var(--ink)" : "var(--fill)",
+                  color: rest.seconds === s ? "var(--bg)" : "var(--ink-2)",
+                }}
+              >
+                {s < 60 ? `${s}s` : `${s / 60}m`}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <SettingRow
           label="Export my data"

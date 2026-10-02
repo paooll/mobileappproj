@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CaretLeft, X, Plus, Check, MagnifyingGlass, Info } from "@phosphor-icons/react";
+import { CaretLeft, X, Plus, Check, MagnifyingGlass, Info, Timer } from "@phosphor-icons/react";
 import {
   getWorkout,
   loadExercises,
@@ -24,7 +24,10 @@ import {
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
+import { useRestTimer } from "../hooks/useRestTimer";
+import { DEFAULT_REST, formatRest, loadRestSettings, type RestSettings } from "../lib/restTimer";
 import CoachHint from "../components/CoachHint";
+import RestTimerStrip from "../components/RestTimer";
 import ExerciseDetail from "../components/ExerciseDetail";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
 
@@ -51,6 +54,9 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   // Keyed by uid so a sign-out or account switch shows the loading state again
   const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
   const [coachHidden, setCoachHidden] = useState(false);
+  const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
+  // Which set the clock is resting from, kept out of the timer itself
+  const [restFrom, setRestFrom] = useState("");
   const { toast } = useToast();
   const [unit] = useUnit();
 
@@ -74,6 +80,32 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
       cancelled = true;
     };
   }, [user]);
+
+  // Rest preferences: one cached read, then local
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    loadRestSettings(user.uid).then((s) => {
+      if (!cancelled) setRest(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const onRestDone = useCallback(() => {
+    // A buzz plus a toast, because the screen may be face down mid set
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate?.([180, 90, 180]);
+      } catch {
+        /* vibration is a nicety, never a failure */
+      }
+    }
+    toast("Rest over. Next set when you're ready.", "success");
+  }, [toast]);
+
+  const timer = useRestTimer(rest.seconds, onRestDone);
 
   // Load workout + exercise catalog once
   useEffect(() => {
@@ -140,6 +172,11 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     });
   }, [selected, history, profile.goal, profile.experience]);
 
+  const startRest = (context: string) => {
+    setRestFrom(context);
+    timer.start();
+  };
+
   const applySuggestion = () => {
     if (!suggestion) return;
     setWeight(String(toDisplay(suggestion.weight, unit)));
@@ -186,6 +223,11 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     try {
       await addSet(id, selected.name, w, r);
       // Keep the inputs as they are — the coach recalculates against the new set
+      if (rest.autoStart) {
+        startRest(
+          `${selected.name} · set ${sets.filter((s) => s.exerciseName === selected.name).length + 1}`
+        );
+      }
     } catch (err) {
       console.error(err);
       toast("Couldn't save the set. Check your connection.", "error");
@@ -206,9 +248,15 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
   return (
     <div
-      className={`min-h-[100dvh] px-5 pt-[max(env(safe-area-inset-top),24px)] ${
-        selected && !coachHidden && !picker ? "pb-[248px]" : "pb-44"
-      }`}
+      className="min-h-[100dvh] px-5 pt-[max(env(safe-area-inset-top),24px)]"
+      // Leave room for the coach strip and the rest clock stacked above the bar
+      style={{
+        paddingBottom:
+          (selected && !coachHidden && !picker ? 92 : 0) +
+          (timer.totalMs > 0 ? 96 : 0) +
+          (!rest.autoStart && !picker ? 44 : 0) +
+          176,
+      }}
     >
       <header className="flex items-center justify-between">
         <button
@@ -279,8 +327,22 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         ))}
       </div>
 
-      {/* Sticky logging bar */}
+      {/* Sticky logging bar, with the rest clock stacked above it */}
       <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5">
+        <AnimatePresence>
+          {timer.totalMs > 0 && (
+            <RestTimerStrip
+              remainingMs={timer.remainingMs}
+              totalMs={timer.totalMs}
+              running={timer.running}
+              context={restFrom || "Rest between sets"}
+              onPause={timer.pause}
+              onResume={timer.resume}
+              onAdd={() => timer.addSeconds(30)}
+              onDismiss={timer.dismiss}
+            />
+          )}
+        </AnimatePresence>
         <div className="glass mx-auto w-full max-w-md p-3 shadow-[var(--shadow-panel)]">
           {picker ? (
             <div>
@@ -394,6 +456,15 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
               >
                 <Plus size={17} weight="bold" /> Add set
               </button>
+              {/* With auto start off the clock needs somewhere to be started by hand */}
+              {!rest.autoStart && (
+                <button
+                  onClick={() => startRest(selected?.name ?? "Rest between sets")}
+                  className="btn-quiet mx-auto mt-2"
+                >
+                  <Timer size={14} weight="bold" /> Rest {formatRest(rest.seconds * 1000)}
+                </button>
+              )}
             </>
           )}
         </div>

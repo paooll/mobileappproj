@@ -6,11 +6,25 @@ Firestore database itself; the exercise catalog seeds itself on first app load.
 
 ## Collections
 
-### `users` (implicit)
+### `users`
 
-Firebase Auth manages accounts — there is no `users` collection unless you
-extend the app. Each authenticated user has a UID (`request.auth.uid`) used
-to scope all data below.
+One document per account, at `users/{uid}`. Firebase Auth owns the credentials;
+this document holds preferences only, and is created during onboarding.
+
+| Field          | Type       | Description                                  |
+| -------------- | ---------- | -------------------------------------------- |
+| `experience`   | string     | new, some, regular, years                    |
+| `goal`         | string     | strength, muscle, endurance, general          |
+| `daysPerWeek`  | number     | weekly training target                        |
+| `equipment`    | string[]   | equipment the athlete has                     |
+| `unit`         | string     | kg or lb                                      |
+| `restSeconds`  | number     | rest timer length after a set (default 90)    |
+| `restAutoStart`| boolean    | start the timer on every logged set (default true) |
+| `onboardedAt`  | timestamp  | server time, set on creation                  |
+
+`restSeconds` and `restAutoStart` are written separately from the onboarding
+fields, so re-running setup never resets them. Missing fields fall back to
+defaults on read, which keeps older documents valid.
 
 ### `workouts`
 
@@ -54,8 +68,9 @@ Housekeeping documents.
 
 ## Security
 
-`firestore.rules` scopes everything: a signed-in user can only read/write
-their own workouts and sets; `exercises` is readable by all signed-in users.
+`firestore.rules` scopes everything: a signed-in user can only read/write their
+own profile document, workouts and sets; `exercises` is readable by all
+signed-in users.
 
 ## Indexes
 
