@@ -1,97 +1,115 @@
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight, Barbell, Timer, ChartLine, Brain } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
-/* Real component preview of the dark app — not a fake div screenshot */
+/**
+ * A real component preview rather than a picture of one: the same panels,
+ * buttons and numerals the app itself renders. Every colour comes from a token,
+ * so the preview reads correctly in whichever theme the visitor is in.
+ */
 function AppPreview() {
+  const sets = [
+    ["1", "70 kg × 8"],
+    ["2", "72.5 kg × 8"],
+    ["3", "72.5 kg × 6"],
+  ];
+
   return (
-    <div
-      className="w-full rounded-[2rem] border border-[#262629] p-5 text-left"
-      style={{ background: "#0c0c0d", color: "#f5f5f5" }}
-    >
-      <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#2c2c30]" />
-      <p
-        className="text-[10px] uppercase tracking-[0.08em]"
-        style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
-      >
-        Monday · Push Day
-      </p>
+    <div className="panel p-4 shadow-[var(--shadow-panel)] sm:p-5">
+      <p className="label">Monday · Push Day</p>
+
       <div className="mt-2 flex items-end gap-2">
-        <span className="num text-[44px] font-bold leading-none tracking-[-0.04em]">
+        <span className="num text-[44px] font-bold leading-none tracking-[-0.03em]">
           12
         </span>
-        <span className="pb-1 text-[12px] font-medium" style={{ color: "#a0a0a5" }}>
+        <span className="pb-1.5 text-[13px] font-medium text-[var(--ink-2)]">
           days in a row
         </span>
       </div>
-      <div className="mt-4 rounded-2xl border border-[#262629] p-3" style={{ background: "#161618" }}>
+
+      <div className="panel mt-4 p-3">
         <div className="flex items-center justify-between">
           <p className="text-[13px] font-semibold">Bench Press</p>
-          <p
-            className="text-[10px] uppercase tracking-[0.08em]"
-            style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
-          >
-            3 sets
-          </p>
+          <p className="label">3 sets</p>
         </div>
-        <div className="mt-2 flex flex-col gap-1.5">
-          {[
-            ["1", "70 kg × 8"],
-            ["2", "72.5 kg × 8"],
-            ["3", "72.5 kg × 6"],
-          ].map(([n, v]) => (
+        <div className="mt-2.5 flex flex-col gap-1.5">
+          {sets.map(([n, v]) => (
             <div
               key={n}
-              className="flex items-center justify-between rounded-xl px-3 py-2"
-              style={{ background: "#232326" }}
+              className="flex items-center justify-between rounded-[10px] px-3 py-2"
+              style={{ background: "var(--fill)" }}
             >
-              <span
-                className="text-[10px]"
-                style={{ color: "#636368", fontFamily: "ui-monospace, monospace" }}
-              >
-                {n}
-              </span>
+              <span className="num text-[12px] text-[var(--ink-3)]">{n}</span>
               <span className="num text-[14px] font-semibold">{v}</span>
               <span className="w-3" />
             </div>
           ))}
         </div>
       </div>
-      <div
-        className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl text-[13px] font-semibold"
-        style={{ background: "#f5f5f5", color: "#0c0c0d" }}
-      >
-        Log set
-      </div>
+
+      <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-2)]">
+        Last time you hit 70 kg for 8. Add 2.5 and take 8 again.
+      </p>
+
+      <div className="btn-solid mt-3 w-full">Log set</div>
     </div>
   );
 }
 
+/**
+ * An editorial index rather than a grid of identical cards. Each row is a real
+ * feature of the shipped app, separated by rules instead of boxed.
+ */
+const FEATURES = [
+  {
+    icon: Barbell,
+    title: "A coach that reads your history",
+    body: "Before every set it tells you what you lifted last time, and by how much to go up. No guessing from memory between sets.",
+  },
+  {
+    icon: Timer,
+    title: "Rest that starts itself",
+    body: "The timer begins the moment a set is logged and tells you when it is over. You never stand there wondering how long is left.",
+  },
+  {
+    icon: ChartLine,
+    title: "Progress you can actually see",
+    body: "Estimated one rep max per lift, drawn against every session since you started. The line moves for reasons you can point at.",
+  },
+  {
+    icon: Brain,
+    title: "Ask it about your own training",
+    body: "A short answer from your log: what you trained last week, when you plateaued, whether you have been adding weight.",
+  },
+];
+
 export default function Landing() {
   const reduce = useReducedMotion();
-  const fade = (delay = 0) =>
+
+  // One authored moment. The rest of the page is still on arrival, which is
+  // cheaper to render and stops every section arriving the same way.
+  const rise = (delay: number) =>
     reduce
       ? {}
       : {
-          initial: { opacity: 0, y: 16 },
-          whileInView: { opacity: 1, y: 0 },
-          viewport: { once: true, margin: "-60px" },
-          transition: { duration: 0.6, delay, ease },
+          initial: { opacity: 0, y: 18 },
+          animate: { opacity: 1, y: 0 },
+          transition: { duration: 0.7, delay, ease },
         };
 
   return (
     <div className="min-h-[100dvh] bg-[var(--bg)] text-[var(--ink)]">
-      <nav className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--bg)]/90 backdrop-blur">
+      <nav className="glass sticky top-0 z-40">
         <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
           <span className="text-[16px] font-semibold tracking-tight">Reprange</span>
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <Link
               to="/auth"
-              className="tab text-[14px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+              className="tab flex h-11 items-center px-1 text-[14px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
             >
               Sign in
             </Link>
@@ -100,43 +118,28 @@ export default function Landing() {
       </nav>
 
       <main className="mx-auto w-full max-w-3xl px-5">
-        {/* Asymmetric hero: copy left, real app preview right */}
-        <section className="grid min-h-[80dvh] grid-cols-1 items-center gap-12 py-16 md:grid-cols-[1.15fr_1fr] md:py-0">
+        <section className="grid min-h-[80dvh] grid-cols-1 items-center gap-12 py-16 md:grid-cols-[1.05fr_1fr] md:py-0">
           <div className="order-2 md:order-1">
             <motion.h1
-              {...(reduce
-                ? {}
-                : {
-                    initial: { opacity: 0, y: 20 },
-                    animate: { opacity: 1, y: 0 },
-                    transition: { duration: 0.7, ease },
-                  })}
-              className="text-[46px] font-bold leading-[1.02] tracking-[-0.035em] md:text-[58px]"
+              {...rise(0)}
+              className="text-[42px] font-bold leading-[1.05] tracking-[-0.03em] md:text-[56px]"
             >
-              Train. Log.
+              Know what to lift
               <br />
-              Repeat.
+              before you lift it.
             </motion.h1>
+
             <motion.p
-              {...(reduce
-                ? {}
-                : {
-                    initial: { opacity: 0, y: 20 },
-                    animate: { opacity: 1, y: 0 },
-                    transition: { duration: 0.7, delay: 0.1, ease },
-                  })}
-              className="mt-4 max-w-[36ch] text-[16px] leading-relaxed text-[var(--ink-2)]">
-              A workout tracker that stays out of the way of the work. Two taps
-              per set, one number that keeps you honest.
+              {...rise(0.08)}
+              className="mt-5 max-w-[46ch] text-[16px] leading-relaxed text-[var(--ink-2)]"
+            >
+              Reprange remembers every set you have logged and turns it into the
+              next one. Logging takes two taps, and the thinking happens while
+              the bar is still loaded.
             </motion.p>
+
             <motion.div
-              {...(reduce
-                ? {}
-                : {
-                    initial: { opacity: 0, y: 20 },
-                    animate: { opacity: 1, y: 0 },
-                    transition: { duration: 0.7, delay: 0.2, ease },
-                  })}
+              {...rise(0.16)}
               className="mt-8 flex flex-col gap-3 sm:flex-row"
             >
               <Link to="/auth?returnTo=%2Fapp" className="btn-solid w-full sm:w-auto">
@@ -148,55 +151,69 @@ export default function Landing() {
               </Link>
             </motion.div>
           </div>
-          <motion.div
-            {...(reduce
-              ? {}
-              : {
-                  initial: { opacity: 0, y: 24 },
-                  animate: { opacity: 1, y: 0 },
-                  transition: { duration: 0.8, delay: 0.15, ease },
-                })}
-            className="order-1 md:order-2"
-          >
+
+          <motion.div {...rise(0.12)} className="order-1 md:order-2">
             <AppPreview />
           </motion.div>
         </section>
 
-        {/* Three numbers, not three cards */}
-        <section className="border-t border-[var(--line)] py-20">
-          <div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
+        {/* What it does, as an index. Rules carry the separation, not boxes. */}
+        <section className="border-t border-[var(--line)]">
+          {FEATURES.map(({ icon: Icon, title, body }) => (
+            <div
+              key={title}
+              className="grid grid-cols-[28px_1fr] gap-x-4 gap-y-2 border-b border-[var(--line)] py-8 sm:grid-cols-[28px_15ch_1fr] sm:gap-x-6"
+            >
+              <Icon size={22} weight="bold" className="mt-0.5 text-[var(--ink-2)]" />
+              <h2 className="text-[17px] font-semibold leading-snug sm:col-start-2">
+                {title}
+              </h2>
+              <p className="col-start-2 max-w-[52ch] text-[15px] leading-relaxed text-[var(--ink-2)] sm:col-start-3">
+                {body}
+              </p>
+            </div>
+          ))}
+        </section>
+
+        <section className="border-t border-[var(--line)] py-16">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             {[
-              ["2 taps", "to log a set. Steppers for weight and reps, then Log set."],
-              ["1 number", "your streak. Show up and it grows. Miss a day, start over."],
-              ["0 clutter", "no feeds, no badges, no noise. Sets and progress only."],
-            ].map(([head, body], i) => (
-              <motion.div key={head} {...fade(i * 0.08)}>
-                <p className="text-[28px] font-bold tracking-[-0.02em]">{head}</p>
-                <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
+              ["876", "exercises ready, with instructions"],
+              ["Two taps", "to log a set"],
+              ["One screen", "to see where you are"],
+            ].map(([head, body]) => (
+              <div key={head}>
+                <p className="text-[24px] font-bold tracking-[-0.02em]">{head}</p>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--ink-2)]">
                   {body}
                 </p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </section>
 
-        <section className="border-t border-[var(--line)] py-20 text-center">
-          <motion.h2
-            {...fade()}
-            className="mx-auto max-w-[18ch] text-[30px] font-bold leading-tight tracking-[-0.02em]"
-          >
-            Your next session starts now.
-          </motion.h2>
-          <motion.div {...fade(0.1)} className="mt-7">
-            <Link to="/auth?returnTo=%2Fapp" className="btn-solid mx-auto inline-flex">
+        <section className="border-t border-[var(--line)] py-20">
+          <div className="max-w-[30ch]">
+            <h2 className="text-[30px] font-bold leading-[1.1] tracking-[-0.025em] md:text-[38px]">
+              Your next session starts now.
+            </h2>
+            <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
+              Setup takes four questions. Nothing to import, nothing to
+              configure before you can log a set.
+            </p>
+          </div>
+          <div className="mt-8">
+            <Link to="/auth?returnTo=%2Fapp" className="btn-solid">
               Start training
               <ArrowRight size={16} weight="bold" />
             </Link>
-          </motion.div>
+          </div>
         </section>
 
         <footer className="border-t border-[var(--line)] py-8">
-          <p className="text-center text-[13px] text-[var(--ink-3)]">Reprange</p>
+          <p className="text-center text-[13px] text-[var(--ink-3)]">
+            Reprange · tracks what you lift, nothing else
+          </p>
         </footer>
       </main>
     </div>

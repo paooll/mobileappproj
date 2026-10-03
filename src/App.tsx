@@ -36,6 +36,26 @@ function RequireUser({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * A read that failed is not the same as a read that came back empty. Treating
+ * them alike is what sent a finished setup back to the first question: the
+ * profile was saved, the follow-up read blipped on a weak connection, and the
+ * guard decided the athlete had never onboarded.
+ */
+function ReadFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 px-8 text-center">
+      <p className="label">Can’t reach your account</p>
+      <p className="max-w-[32ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
+        Your training is safe. The connection dropped while loading it.
+      </p>
+      <button onClick={onRetry} className="btn-solid px-6">
+        Try again
+      </button>
+    </div>
+  );
+}
+
 function RequireAuth({
   children,
 }: {
@@ -46,6 +66,10 @@ function RequireAuth({
   const [profile, setProfile] = useState<UserProfile | null | undefined>(() =>
     cachedUid ? cachedProfile : undefined
   );
+  // Separate from profile, because null means "no profile" and only that should
+  // send someone to onboarding.
+  const [readFailed, setReadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -58,6 +82,7 @@ function RequireAuth({
       return;
     }
     let cancelled = false;
+    setReadFailed(false);
     loadProfile(user.uid)
       .then((p) => {
         if (cancelled) return;
@@ -66,17 +91,22 @@ function RequireAuth({
         setProfile(p);
       })
       .catch(() => {
-        // A failed read must not trap the user out of the app. Treat as onboarded.
-        if (!cancelled) setProfile(null);
+        if (cancelled) return;
+        setProfile(undefined);
+        setReadFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, attempt]);
 
-  if (user === undefined || profile === undefined) return <Splash />;
+  if (user === undefined) return <Splash />;
   if (!user)
     return <Navigate to={`/auth?returnTo=${encodeURIComponent(location.pathname)}`} replace />;
+
+  if (readFailed)
+    return <ReadFailed onRetry={() => setAttempt((n) => n + 1)} />;
+  if (profile === undefined) return <Splash />;
 
   // Cold start: brand new accounts go through setup before the app.
   if (!profile) return <Navigate to="/onboarding" replace />;

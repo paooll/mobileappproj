@@ -94,7 +94,9 @@ export default function Onboarding() {
         // Preferences already chosen in Settings survive a setup edit
         ...(existing ?? {}),
       }, user.email ?? "");
-      navigate("/app/profile", { replace: true });
+      // A finished cold start belongs in the app, not on the settings screen it
+      // just wrote. Editing setup was reached from Profile, so put them back there.
+      navigate(editing ? "/app/profile" : "/app", { replace: true });
     } catch (err) {
       console.error(err);
       toast("Couldn't save your setup. Try again.", "error");
