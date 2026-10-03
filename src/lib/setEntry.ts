@@ -1,5 +1,5 @@
 import { REP_WINDOW, weightStep } from "./coach";
-import type { Experience, Goal } from "./profile";
+import type { Experience, Goal, Rounding } from "./profile";
 import type { Unit } from "./units";
 
 export const MIN_REPS = 1;
@@ -48,6 +48,18 @@ export function quickReps(goal: Goal): number[] {
 export function formatEntryValue(value: number): string {
   if (!isFinite(value)) return "";
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+/**
+ * Snaps a weight onto the increment the athlete can actually load. Pounds snap
+ * onto a whole plate-friendly step so 137.4 lb does not become a set nobody
+ * can reproduce in the rack.
+ */
+export function snapWeight(kg: number, roundTo: Rounding, unit: Unit): number {
+  if (!isFinite(kg) || kg <= 0) return 0;
+  // Pounds move in half-plate jumps; the same 2.5 kg is not a real lb increment
+  const step = unit === "lb" ? Math.max(0.5, Math.round(roundTo * 0.8 * 2) / 2) : roundTo;
+  return Math.max(0, Math.round(kg / step) * step);
 }
 
 /** Typed weight, or null when the field cannot be read as a number. */

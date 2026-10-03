@@ -1,0 +1,51 @@
+name: Weekly digest
+
+# Scheduled Cloud Functions need Cloud Scheduler, which requires a billing-enabled
+# project. This app stays on the free plan, so the same job runs here instead.
+# GitHub Actions, Firestore and Knock all have free tiers that comfortably cover
+# one short run a day.
+on:
+  schedule:
+    # 15:00 UTC, which is morning in the Americas and still Monday in Auckland.
+    # The athlete's own weekday is matched inside the script, not by this cron.
+    - cron: '0 15 * * *'
+  # So the digest can be tried without waiting for the right weekday.
+  workflow_dispatch:
+
+concurrency:
+  # Never let two runs mail the same person twice.
+  group: weekly-digest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The script imports only firebase-admin, @knocklabs/node and its own
+      # digest module, so the app's dependencies are never needed here. This has
+      # to be `npm install`, not `npm ci`: npm ci installs strictly from the
+      # lockfile and rejects extra package names, and none of these three are in
+      # package.json by design.
+      - name: Install job dependencies
+        run: npm install --no-save --no-audit --no-fund tsx firebase-admin @knocklabs/node
+
+      - name: Send
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+          # Passed through the environment rather than interpolated into the
+          # script below, where a backtick in the JSON would be executed.
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          KNOCK_API_KEY: ${{ secrets.KNOCK_API_KEY }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          npx tsx scripts/weekly-digest.ts

@@ -21,7 +21,8 @@ import {
   type CoachSession,
   type RecentArchive,
 } from "../lib/coach";
-import { clampReps, loadStep, quickReps } from "../lib/setEntry";
+import { clampReps, loadStep, quickReps, snapWeight } from "../lib/setEntry";
+import { setHapticsEnabled, tick } from "../lib/haptics";
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
@@ -62,6 +63,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   // Keyed by uid so a sign-out or account switch shows the loading state again
   const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
   const [coachHidden, setCoachHidden] = useState(false);
+  // The athlete can turn the coach off for good, not just this session
+  const coachOff = coachHidden || !profile.coach;
   const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
   // Which set the clock is resting from, kept out of the timer itself
   const [restFrom, setRestFrom] = useState("");
@@ -71,6 +74,11 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const ready = !!user && loaded?.uid === user.uid;
   const historyLoading = !!user && !ready;
   const archive = ready ? loaded.archive : null;
+
+  // Haptics and coach visibility are preferences, so the whole screen reads them
+  useEffect(() => {
+    setHapticsEnabled(profile.haptics);
+  }, [profile.haptics]);
 
   // The logging bar changes height as the coach strip and picker come and go, so
   // measure it rather than guessing with a stack of magic numbers.
@@ -118,13 +126,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
   const onRestDone = useCallback(() => {
     // A buzz plus a toast, because the screen may be face down mid set
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      try {
-        navigator.vibrate?.([180, 90, 180]);
-      } catch {
-        /* vibration is a nicety, never a failure */
-      }
-    }
+    tick([180, 90, 180]);
     toast("Rest over. Next set when you're ready.", "success");
   }, [toast]);
 
@@ -223,7 +225,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
   const applySuggestion = () => {
     if (!suggestion) return;
-    setWeightKg(suggestion.weight);
+    setWeightKg(snapWeight(suggestion.weight, profile.roundTo, unit));
     setRepsCount(suggestion.reps);
   };
 
@@ -241,7 +243,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     });
     const fallback = coachIndex.last.get(ex.name) ?? null;
     const prefill = next ?? fallback;
-    setWeightKg(prefill ? prefill.weight : 0);
+    setWeightKg(prefill ? snapWeight(prefill.weight, profile.roundTo, unit) : 0);
     setRepsCount(prefill ? prefill.reps : (repChips[1] ?? 8));
   };
 
@@ -265,6 +267,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     }
     try {
       await addSet(id, selected.name, weightKg, r);
+      tick(12);
       // The steppers stay put: the next set is usually the same or one jump up,
       // and the coach recalculates against what was just logged
       if (rest.autoStart) {
@@ -513,7 +516,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                   {selected?.muscleGroup ?? "Tap to pick"}
                 </span>
               </button>
-              {selected && !coachHidden && (
+              {selected && !coachOff && (
                 <div className="mt-2">
                   <CoachHint
                     loading={historyLoading}
@@ -531,7 +534,9 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                   label="Weight"
                   value={toDisplay(weightKg, unit)}
                   step={step}
-                  onChange={(v) => setWeightKg(fromDisplay(v, unit))}
+                  onChange={(v) =>
+                    setWeightKg(snapWeight(fromDisplay(v, unit), profile.roundTo, unit))
+                  }
                   suffix={unit}
                   disabled={!selected}
                 />

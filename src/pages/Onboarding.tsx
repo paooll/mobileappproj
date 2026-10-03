@@ -8,10 +8,13 @@ import {
   EXPERIENCE_OPTIONS,
   GOAL_OPTIONS,
   EQUIPMENT_OPTIONS,
+  DEFAULT_PREFS,
   loadProfile,
+  pickPrefs,
   saveProfile,
   type Experience,
   type Goal,
+  type UserPrefs,
 } from "../lib/profile";
 import { useUnit } from "../lib/units";
 
@@ -34,6 +37,8 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
   // Edit mode, reached from Profile. Setup starts with the answers already given.
   const [editing, setEditing] = useState(false);
+  // Preferences chosen in Settings must survive an edit of the setup answers
+  const [existing, setExisting] = useState<Partial<UserPrefs> | null>(null);
 
   // Prefill from the stored profile so editing never means retyping everything
   useEffect(() => {
@@ -46,6 +51,7 @@ export default function Onboarding() {
       setGoal(p.goal);
       setDays(p.daysPerWeek);
       setEquipment(p.equipment);
+      setExisting(pickPrefs(p));
     });
     return () => {
       cancelled = true;
@@ -84,6 +90,9 @@ export default function Onboarding() {
         daysPerWeek: days,
         equipment,
         unit,
+        ...DEFAULT_PREFS,
+        // Preferences already chosen in Settings survive a setup edit
+        ...(existing ?? {}),
       });
       navigate("/app/profile", { replace: true });
     } catch (err) {

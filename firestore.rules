@@ -19,11 +19,20 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
-    // User profile / onboarding preferences: each user reads and writes only their own
+    // User profile / onboarding preferences: each user reads and writes only
+    // their own. Delete is allowed so account deletion can clean up after
+    // itself rather than leaving an orphaned preferences document behind.
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid;
-      allow delete: if false;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Profile photo, kept out of the profile document so the one the route
+    // guard reads on every navigation stays small. Cloud Storage would need a
+    // billing-enabled project, so the resized image lives here as bytes.
+    match /users/{uid}/{docId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
     }
 
     // Workouts: owner-scoped
