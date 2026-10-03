@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CaretLeft, X, Plus, Check, MagnifyingGlass, Info, Timer } from "@phosphor-icons/react";
+import { CaretLeft, X, Check, MagnifyingGlass, Info, Timer } from "@phosphor-icons/react";
 import {
   getWorkout,
   loadExercises,
@@ -21,12 +21,15 @@ import {
   type CoachSession,
   type RecentArchive,
 } from "../lib/coach";
+import { clampReps, loadStep, quickReps } from "../lib/setEntry";
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
 import { useRestTimer } from "../hooks/useRestTimer";
 import { DEFAULT_REST, formatRest, loadRestSettings, type RestSettings } from "../lib/restTimer";
 import CoachHint from "../components/CoachHint";
+import RepeatSet from "../components/RepeatSet";
+import Stepper from "../components/Stepper";
 import RestTimerStrip from "../components/RestTimer";
 import ExerciseDetail from "../components/ExerciseDetail";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
@@ -48,8 +51,12 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Exercise | null>(null);
-  const [weight, setWeight] = useState("");
-  const [reps, setReps] = useState("");
+  // Weight is kept in kilograms, the same unit Firestore stores. Reps are a count.
+  const [weightKg, setWeightKg] = useState(0);
+  const [repsCount, setRepsCount] = useState(0);
+  // Measured so the page always clears the logging bar, whatever it currently holds
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(180);
   const [detailEx, setDetailEx] = useState<Exercise | null>(null);
   // Keyed by uid so a sign-out or account switch shows the loading state again
   const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
@@ -63,6 +70,21 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const ready = !!user && loaded?.uid === user.uid;
   const historyLoading = !!user && !ready;
   const archive = ready ? loaded.archive : null;
+
+  // The logging bar changes height as the coach strip and picker come and go, so
+  // measure it rather than guessing with a stack of magic numbers.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const next = el.getBoundingClientRect().height;
+      if (next > 0) setBarHeight(Math.round(next));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Coach history: one bounded, cached read, then derived in memory
   useEffect(() => {
@@ -172,6 +194,24 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     });
   }, [selected, history, profile.goal, profile.experience]);
 
+  /** Smallest jump that means something on this bar, in the unit being read. */
+  const step = useMemo(
+    () => loadStep(selected?.equipment, profile.experience, unit),
+    [selected, profile.experience, unit]
+  );
+
+  /** Reps worth one tap, from the athlete's goal window. */
+  const repChips = useMemo(() => quickReps(profile.goal), [profile.goal]);
+
+  /** Newest set for the selected exercise: this session first, then the gym record. */
+  const lastSet = useMemo(() => {
+    if (!selected) return null;
+    const inSession = sets.filter((s) => s.exerciseName === selected.name);
+    return inSession.length > 0
+      ? { weight: inSession[inSession.length - 1].weight, reps: inSession[inSession.length - 1].reps }
+      : (coachIndex.last.get(selected.name) ?? null);
+  }, [selected, sets, coachIndex]);
+
   const startRest = (context: string) => {
     setRestFrom(context);
     timer.start();
@@ -179,8 +219,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
   const applySuggestion = () => {
     if (!suggestion) return;
-    setWeight(String(toDisplay(suggestion.weight, unit)));
-    setReps(String(suggestion.reps));
+    setWeightKg(suggestion.weight);
+    setRepsCount(suggestion.reps);
   };
 
   const chooseExercise = (ex: Exercise) => {
@@ -197,8 +237,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     });
     const fallback = coachIndex.last.get(ex.name) ?? null;
     const prefill = next ?? fallback;
-    setWeight(prefill ? String(toDisplay(prefill.weight, unit)) : "");
-    setReps(prefill ? String(prefill.reps) : "");
+    setWeightKg(prefill ? prefill.weight : 0);
+    setRepsCount(prefill ? prefill.reps : (repChips[1] ?? 8));
   };
 
   if (!workout && liveSets.length === 0) {
@@ -214,15 +254,15 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
   const add = async () => {
     if (!id || !selected) return;
-    const w = fromDisplay(parseFloat(weight), unit);
-    const r = parseInt(reps, 10);
-    if (!isFinite(w) || w < 0 || !Number.isInteger(r) || r < 1) {
+    const r = Math.round(repsCount);
+    if (!isFinite(weightKg) || weightKg < 0 || !Number.isFinite(r) || r < 1) {
       toast("Enter a valid weight and at least 1 rep.", "error");
       return;
     }
     try {
-      await addSet(id, selected.name, w, r);
-      // Keep the inputs as they are — the coach recalculates against the new set
+      await addSet(id, selected.name, weightKg, r);
+      // The steppers stay put: the next set is usually the same or one jump up,
+      // and the coach recalculates against what was just logged
       if (rest.autoStart) {
         startRest(
           `${selected.name} · set ${sets.filter((s) => s.exerciseName === selected.name).length + 1}`
@@ -249,13 +289,10 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   return (
     <div
       className="min-h-[100dvh] px-5 pt-[max(env(safe-area-inset-top),24px)]"
-      // Leave room for the coach strip and the rest clock stacked above the bar
+      // Leave room for the sticky logging bar, measured live so the coach strip,
+      // rest clock and picker can all change height without covering the list
       style={{
-        paddingBottom:
-          (selected && !coachHidden && !picker ? 92 : 0) +
-          (timer.totalMs > 0 ? 96 : 0) +
-          (!rest.autoStart && !picker ? 44 : 0) +
-          176,
+        paddingBottom: `calc(${barHeight}px + 84px + env(safe-area-inset-bottom) + 24px)`,
       }}
     >
       <header className="flex items-center justify-between">
@@ -328,7 +365,10 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
       </div>
 
       {/* Sticky logging bar, with the rest clock stacked above it */}
-      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5">
+      <div
+        ref={barRef}
+        className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5"
+      >
         <AnimatePresence>
           {timer.totalMs > 0 && (
             <RestTimerStrip
@@ -427,34 +467,52 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  className="field num"
-                  type="number"
-                  inputMode="decimal"
-                  placeholder={unit}
-                  aria-label="Weight"
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
+                <Stepper
+                  label="Weight"
+                  value={toDisplay(weightKg, unit)}
+                  step={step}
+                  onChange={(v) => setWeightKg(fromDisplay(v, unit))}
+                  suffix={unit}
+                  disabled={!selected}
                 />
-                <input
-                  className="field num"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="reps"
-                  aria-label="Reps"
-                  value={reps}
-                  onChange={(e) => setReps(e.target.value)}
+                <Stepper
+                  label="Reps"
+                  value={repsCount}
+                  step={1}
+                  onChange={(v) => setRepsCount(clampReps(v))}
+                  disabled={!selected}
                 />
               </div>
+              {selected && (
+                <div className="mt-2 flex items-center gap-2">
+                  <RepeatSet
+                    last={lastSet}
+                    unit={unit}
+                    onRepeat={(w, r) => {
+                      setWeightKg(w);
+                      setRepsCount(r);
+                    }}
+                  />
+                  {repChips.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setRepsCount(r)}
+                      aria-pressed={repsCount === r}
+                      className={`btn-quiet num px-0 ${lastSet ? "w-10 shrink-0" : "flex-1"}`}
+                      style={repsCount === r ? { background: "var(--ink)", color: "var(--bg)" } : undefined}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 className="btn-solid mt-2 w-full"
-                disabled={!selected || !weight || !reps}
-                style={
-                  selected && weight && reps ? undefined : { opacity: 0.4 }
-                }
+                disabled={!selected || repsCount < 1}
+                style={selected && repsCount >= 1 ? undefined : { opacity: 0.4 }}
                 onClick={add}
               >
-                <Plus size={17} weight="bold" /> Add set
+                Log set
               </button>
               {/* With auto start off the clock needs somewhere to be started by hand */}
               {!rest.autoStart && (

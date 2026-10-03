@@ -104,7 +104,7 @@ interface RepWindow {
 }
 
 /** Where the athlete wants to sit for a working set, by stated goal. */
-const REP_WINDOW: Record<Goal, RepWindow> = {
+export const REP_WINDOW: Record<Goal, RepWindow> = {
   strength: { min: 3, target: 5, max: 8 },
   muscle: { min: 8, target: 12, max: 20 },
   endurance: { min: 12, target: 20, max: 30 },
@@ -118,7 +118,10 @@ const REP_WINDOW: Record<Goal, RepWindow> = {
  * jumps, dumbbells and kettlebells in 2 kg, machines in bigger steps. Returns
  * null when there is no bar to load, which turns the coach into a rep coach.
  */
-function weightStep(equipment: string | undefined, experience: Experience): number | null {
+export function weightStep(
+  equipment: string | undefined,
+  experience: Experience
+): number | null {
   const eq = (equipment ?? "").toLowerCase();
   if (!eq || eq.includes("body") || eq.includes("band")) return null;
 
