@@ -93,7 +93,7 @@ export default function Onboarding() {
         ...DEFAULT_PREFS,
         // Preferences already chosen in Settings survive a setup edit
         ...(existing ?? {}),
-      });
+      }, user.email ?? "");
       navigate("/app/profile", { replace: true });
     } catch (err) {
       console.error(err);

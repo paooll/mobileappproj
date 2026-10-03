@@ -44,6 +44,12 @@ export interface UserProfile extends UserPrefs {
    * needs it because "Monday" means the athlete's Monday, not the server's.
    */
   tzOffset: number;
+  /**
+   * Where the digest goes. Firebase Auth owns this address, but the scheduled
+   * job runs outside the app and has no session, so the only copy it can reach
+   * is the one on this document. Written when the athlete opts in.
+   */
+  email: string;
   onboardedAt: unknown;
 }
 
@@ -142,6 +148,7 @@ export async function loadProfile(uid: string): Promise<UserProfile | null> {
       typeof d.tzOffset === "number" && d.tzOffset >= -12 && d.tzOffset <= 14
         ? d.tzOffset
         : 0,
+    email: typeof d.email === "string" ? d.email : "",
     onboardedAt: d.onboardedAt,
     // Every preference falls back, so documents written before a field existed
     // keep working instead of arriving as undefined
@@ -191,15 +198,21 @@ export async function deleteProfile(uid: string) {
 
 export async function saveProfile(
   uid: string,
-  profile: Omit<UserProfile, "onboardedAt" | "tzOffset">
+  profile: Omit<UserProfile, "onboardedAt" | "tzOffset" | "email">,
+  email = ""
 ) {
   const tzOffset = localTimezoneOffset();
   await setDoc(
     doc(db, "users", uid),
-    { ...profile, tzOffset, onboardedAt: serverTimestamp() },
+    { ...profile, email, tzOffset, onboardedAt: serverTimestamp() },
     { merge: true }
   );
-  primeProfileCache(uid, { ...profile, tzOffset, onboardedAt: null } as UserProfile);
+  primeProfileCache(uid, {
+    ...profile,
+    email,
+    tzOffset,
+    onboardedAt: null,
+  } as UserProfile);
 }
 
 /** Initials for the avatar fallback: "Sam Smith" -> "SS", "sam@" -> "S". */

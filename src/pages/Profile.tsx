@@ -197,6 +197,26 @@ export default function Profile({ profile }: { profile: UserProfile }) {
     [prefs, user, toast]
   );
 
+  /**
+   * The digest job has no session and can only read Firestore, so the address
+   * has to be on the profile document. Athletes who opted in before it was
+   * stored get it written the next time they open this screen.
+   */
+  useEffect(() => {
+    const address = user?.email;
+    if (!address || !prefs.weeklyDigest || prefs.email === address) return;
+    updateProfile(user.uid, { email: address })
+      .then(() => {
+        // updateProfile only refreshes the shared cache, so without this the
+        // guard above never becomes true and the write repeats on every auth
+        // token refresh.
+        setPrefs((p) => (p.email === address ? p : { ...p, email: address }));
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }, [user, prefs.weeklyDigest, prefs.email]);
+
   const updateRest = useCallback(
     async (patch: Partial<RestSettings>) => {
       if (!user) return;
@@ -673,11 +693,15 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             <Switch
               checked={prefs.weeklyDigest}
               onChange={(weeklyDigest) =>
-                // The job sends on the athlete's weekday, so record where this
-                // device is the moment they ask to start hearing from us.
-                updatePref(
-                  weeklyDigest ? { weeklyDigest, tzOffset: localTimezoneOffset() } : { weeklyDigest }
-                )
+                updatePref({
+                  weeklyDigest,
+                  // The job sends on the athlete's weekday, so record where this
+                  // device is the moment they ask to start hearing from us.
+                  ...(weeklyDigest ? { tzOffset: localTimezoneOffset() } : {}),
+                  // The job runs without a session and can only read Firestore,
+                  // so the address has to travel with the opt-in.
+                  ...(weeklyDigest && user?.email ? { email: user.email } : {}),
+                })
               }
               label="Email me a weekly progress summary"
             />

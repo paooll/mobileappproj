@@ -17,6 +17,7 @@ import Knock from "@knocklabs/node";
 import {
   isoDaysAgo,
   isDigestDay,
+  dayOfWeekInZone,
   summarize,
   type SetLite,
   type WorkoutLite,
@@ -63,21 +64,36 @@ async function main() {
 
   let sent = 0;
   const failures: string[] = [];
+  // Skipping is normal most days, but "sent 0" on its own cannot be told apart
+  // from "opted in, wrong weekday" or "opted in, nothing to report". Every skip
+  // says why, so a silent zero is never a mystery.
+  const skipped: string[] = [];
 
   for (const doc of optedIn.docs) {
     const uid = doc.id;
     const data = doc.data() as DigestPrefs;
-    if (!data.email) continue;
+    if (!data.email) {
+      skipped.push(`${uid}: no email on the profile`);
+      continue;
+    }
 
     const digestDay = typeof data.digestDay === "number" ? data.digestDay : 1;
     const tzHours = typeof data.tzOffset === "number" ? data.tzOffset : 0;
-    if (!isDigestDay(now, digestDay, tzHours)) continue;
+    if (!isDigestDay(now, digestDay, tzHours)) {
+      skipped.push(
+        `${uid}: digest day is ${digestDay}, today is ${dayOfWeekInZone(now, tzHours)}`
+      );
+      continue;
+    }
 
     try {
       const digest = await buildDigest(uid, fromISO, toISO, previousFromISO);
       // Someone who stopped training should not be chased by an email that only
       // ever says "nothing logged". The setting is theirs to turn back on.
-      if (!digest || digest.sessions === 0) continue;
+      if (!digest || digest.sessions === 0) {
+        skipped.push(`${uid}: nothing logged in the last 7 days`);
+        continue;
+      }
 
       // users.update is Knock's upsert: a re-run must not fail just because the
       // recipient is already known.
@@ -97,6 +113,7 @@ async function main() {
     }
   }
 
+  for (const reason of skipped) console.log(`Skipped ${reason}.`);
   console.log(`Weekly digest finished. Sent ${sent}, failed ${failures.length}.`, failures);
   if (failures.length > 0) process.exitCode = 1;
 }
