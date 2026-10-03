@@ -462,17 +462,3 @@ export function computePersonalRecords(
   }
   return [...best.values()].sort((a, b) => b.weight - a.weight);
 }
-
-/* ---------- Workout templates: one-tap start ---------- */
-
-export interface Template {
-  name: string;
-  exercises: string[];
-}
-
-export const TEMPLATES: Template[] = [
-  { name: "Push Day", exercises: ["Bench Press", "Overhead Press", "Triceps Pushdown"] },
-  { name: "Pull Day", exercises: ["Deadlift", "Lat Pulldown", "Barbell Curl"] },
-  { name: "Leg Day", exercises: ["Squat", "Leg Press", "Leg Curl"] },
-  { name: "Full Body", exercises: ["Squat", "Bench Press", "Barbell Row"] },
-];

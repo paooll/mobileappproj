@@ -72,6 +72,22 @@ reporting zero sends is never unexplained.
 It runs on GitHub Actions rather than Firebase Cloud Functions because scheduled
 functions need Cloud Scheduler, which also requires a billing-enabled project.
 
+### `users/{uid}/routines/{routineId}`
+
+One session of the athlete's own training split.
+
+| Field       | Type     | Description                                              |
+| ----------- | -------- | -------------------------------------------------------- |
+| `name`      | string   | their name for it, e.g. "Push" or "Legs heavy"           |
+| `days`      | number[] | weekdays it is for, 0 = Sunday. Empty means any day      |
+| `exercises` | string[] | exercise names, in the order they want to do them       |
+| `createdAt` | string   | ISO timestamp, used for a stable order                   |
+
+The app ships no split of its own. Push/legs, upper/lower, a full-body rotation
+and a bro split are all common, and which one somebody runs changes over time,
+so the athlete names their own days and order. `Today` offers the routines whose
+`days` include today, plus any with no days set.
+
 ### `workouts`
 
 One document per workout session.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CaretLeft, X, Check, MagnifyingGlass, Info, Timer } from "@phosphor-icons/react";
+import { CaretLeft, X, Check, Timer } from "@phosphor-icons/react";
 import {
   getWorkout,
   loadExercises,
@@ -33,6 +33,7 @@ import RepeatSet from "../components/RepeatSet";
 import Stepper from "../components/Stepper";
 import RestTimerStrip from "../components/RestTimer";
 import ExerciseDetail from "../components/ExerciseDetail";
+import ExercisePicker from "../components/ExercisePicker";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
 import { friendlyDate } from "../lib/progress";
 
@@ -42,6 +43,11 @@ const TODAY = new Date().toISOString().slice(0, 10);
 export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Moves the athlete planned on their routine, handed over by Today. Optional:
+  // a session started by hand simply arrives without them.
+  const planned = (location.state as { planned?: string[] } | null)?.planned ?? [];
+  const [plannedDone, setPlannedDone] = useState<number[]>([]);
   const user = useAuthUser();
 
   const [workout, setWorkout] = useState<(Workout & { sets: WorkoutSet[] }) | null>(
@@ -51,7 +57,6 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
 
   const [picker, setPicker] = useState(false);
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Exercise | null>(null);
   // Weight is kept in kilograms, the same unit Firestore stores. Reps are a count.
   const [weightKg, setWeightKg] = useState(0);
@@ -161,13 +166,13 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     return [...map.entries()];
   }, [sets]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return exercises.slice(0, 40);
-    return exercises
-      .filter((e) => e.name.toLowerCase().includes(q))
-      .slice(0, 40);
-  }, [exercises, search]);
+  // Exercises already logged this session. Surfaced at the top of the picker
+  // because repeating a move is the most common thing done mid-session.
+  const loggedNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of [...(workout?.sets ?? []), ...liveSets]) names.add(s.exerciseName);
+    return Array.from(names).reverse();
+  }, [workout, liveSets]);
 
   // One pass over the archive: heaviest set per exercise + per exercise sessions
   const coachIndex = useMemo(() => buildCoachIndex(archive), [archive]);
@@ -232,7 +237,6 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const chooseExercise = (ex: Exercise) => {
     setSelected(ex);
     setPicker(false);
-    setSearch("");
     setCoachHidden(false);
     // Prefill from the coach when it has something to say, else the best on record
     const next = suggestNext({
@@ -435,73 +439,55 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         </AnimatePresence>
         <div className="glass mx-auto w-full max-w-md p-3 shadow-[var(--shadow-panel)]">
           {picker ? (
-            <div>
-              <div className="relative">
-                <MagnifyingGlass
-                  size={16}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
-                />
-                <input
-                  // No autofocus on touch: the keyboard would cover the list the
-                  // picker just opened to show
-                  autoFocus={false}
-                  className="field pl-10 pr-10"
-                  placeholder="Search 876 exercises"
-                  enterKeyHint="search"
-                  type="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  aria-label="Search exercises"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    aria-label="Clear search"
-                    className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
-                  >
-                    <X size={15} weight="bold" />
-                  </button>
-                )}
-              </div>
-              <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
-                {filtered.map((e) => {
-                  const last = lastFor(e.name);
-                  return (
-                    <div
-                      key={e.id}
-                      className="flex items-center justify-between rounded-lg px-3 transition-colors active:bg-[var(--fill)]"
-                    >
-                      <button
-                        onClick={() => chooseExercise(e)}
-                        className="tab min-h-[56px] min-w-0 flex-1 py-2.5 text-left"
-                      >
-                        <span className="block truncate text-[15px]">{e.name}</span>
-                        {last && (
-                          <span className="num block text-[12px] text-[var(--ink-3)]">
-                            last {toDisplay(last.weight, unit)} {unit} × {last.reps}
-                          </span>
-                        )}
-                      </button>
-                      <span className="label ml-2 shrink-0">{e.muscleGroup}</span>
-                      <button
-                        onClick={() => setDetailEx(e)}
-                        className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] active:text-[var(--ink)]"
-                        aria-label={`How to do ${e.name}`}
-                      >
-                        <Info size={16} />
-                      </button>
-                    </div>
-                  );
-                })}
-                {filtered.length === 0 && (
-                  <p className="py-6 text-center text-[14px] text-[var(--ink-3)]">
-                    No exercises match “{search}”
-                  </p>
-                )}
-              </div>
-            </div>
+            <ExercisePicker
+              exercises={exercises}
+              equipment={profile.equipment}
+              lastFor={lastFor}
+              recentNames={loggedNames}
+              recentLabel="Already in this workout"
+              formatWeight={(kg) => String(toDisplay(kg, unit))}
+              unit={unit}
+              onChoose={chooseExercise}
+              onInspect={setDetailEx}
+            />
           ) : (
             <>
+              {planned.length > 0 && (
+                <div className="mb-3">
+                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                    <p className="label">Planned</p>
+                    <p className="num text-[12px] text-[var(--ink-3)]">
+                      {plannedDone.length} of {planned.length}
+                    </p>
+                  </div>
+                  <div className="-mx-1 flex gap-1.5 overflow-x-auto overscroll-x-contain px-1 pb-1">
+                    {planned.map((name, i) => {
+                      const ex = exercises.find((e) => e.name === name) ?? null;
+                      const done = plannedDone.includes(i);
+                      return (
+                        <button
+                          key={`${name}-${i}`}
+                          disabled={!ex}
+                          onClick={() => {
+                            if (!ex) return;
+                            setPlannedDone((prev) =>
+                              prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+                            );
+                            chooseExercise(ex);
+                          }}
+                          aria-pressed={done}
+                          className="btn-quiet shrink-0"
+                          style={
+                            done ? { background: "var(--ink)", color: "var(--bg)" } : undefined
+                          }
+                        >
+                          {ex ? name : `${name} (not in catalog)`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => setPicker(true)}
                 className="tab flex w-full items-center justify-between rounded-xl bg-[var(--fill)] px-4 text-left"

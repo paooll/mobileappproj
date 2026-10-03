@@ -61,6 +61,7 @@ import {
 } from "../lib/account";
 import { loadAvatar, removeAvatar, uploadAvatar } from "../lib/avatar";
 import { friendlyDate } from "../lib/progress";
+import RoutinesSection from "../components/RoutinesSection";
 
 const UNIT_OPTIONS: Unit[] = ["kg", "lb"];
 
@@ -792,6 +793,11 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             </p>
           </div>
         </div>
+      </Section>
+
+      {/* Their own split, not a house one */}
+      <Section title="Your split">
+        {user && <RoutinesSection uid={user.uid} equipment={profile.equipment} />}
       </Section>
 
       {/* Personal records */}

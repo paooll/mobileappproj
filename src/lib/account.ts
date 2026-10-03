@@ -9,6 +9,7 @@ import {
 import { collection, deleteDoc, getDocs, query, where } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { deleteProfile } from "./profile";
+import { deleteAllRoutines } from "./routines";
 
 /** How this account signs in. Decides which controls make sense. */
 export type AuthMethod = "password" | "google";
@@ -72,6 +73,8 @@ export async function deleteAccount() {
 
   // Best effort: a leftover preferences doc is inert once the account is gone,
   // and losing the whole delete over it would be the worse outcome.
+  // Routines go with the profile, or deleting the account strands them
+  await deleteAllRoutines(user.uid).catch(() => undefined);
   await deleteProfile(user.uid).catch(() => undefined);
   await deleteUser(user);
 }
