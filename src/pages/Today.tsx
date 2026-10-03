@@ -17,6 +17,7 @@ import { useAuthUser } from "../hooks/useAuthUser";
 import ThemeToggle from "../components/ThemeToggle";
 import { useToast } from "../components/Toast";
 import { formatVolume, useUnit } from "../lib/units";
+import { friendlyDate } from "../lib/progress";
 import { goalHint, type UserProfile } from "../lib/profile";
 
 function Stat({
@@ -39,6 +40,24 @@ function Stat({
         )}
       </span>
       <span className="label mt-1">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Day one has nothing to show, so it says what to do instead of four zeros.
+ * An empty streak counter is the least motivating possible welcome.
+ */
+function FirstRun() {
+  return (
+    <div className="panel mt-8 px-6 py-9 text-center">
+      <p className="text-[17px] font-semibold tracking-[-0.01em]">
+        Nothing logged yet
+      </p>
+      <p className="mx-auto mt-2 max-w-[30ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+        Pick a session above, add your first set, and this page fills up with your
+        streak, volume and progress.
+      </p>
     </div>
   );
 }
@@ -129,6 +148,7 @@ export default function Today({ profile }: { profile: UserProfile }) {
   );
 
   const completed = useMemo(() => workouts.filter((w) => w.completed).slice(0, 3), [workouts]);
+  const firstRun = !!stats && stats.totalWorkouts === 0;
 
   const startFromTemplate = async (name: string) => {
     if (!user || starting) return;
@@ -160,12 +180,20 @@ export default function Today({ profile }: { profile: UserProfile }) {
 
       <motion.div {...rise(0.05)} className="mt-4">
         <div className="flex items-end gap-3">
-          <span className="num text-[76px] font-bold leading-[0.9] tracking-[-0.04em]">
-            {stats?.streak ?? 0}
-          </span>
-          <span className="pb-2 text-[15px] font-medium text-[var(--ink-2)]">
-            day{stats?.streak === 1 ? "" : "s"} in a row
-          </span>
+          {firstRun ? (
+            <span className="text-[30px] font-bold leading-[1.05] tracking-[-0.03em]">
+              Let's get you logged.
+            </span>
+          ) : (
+            <>
+              <span className="num text-[76px] font-bold leading-[0.9] tracking-[-0.04em]">
+                {stats?.streak ?? 0}
+              </span>
+              <span className="pb-2 text-[15px] font-medium text-[var(--ink-2)]">
+                day{stats?.streak === 1 ? "" : "s"} in a row
+              </span>
+            </>
+          )}
         </div>
         <p className="mt-3 max-w-[38ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
           {goalHint(profile.goal)}
@@ -225,9 +253,10 @@ export default function Today({ profile }: { profile: UserProfile }) {
             />
           ))}
         </div>
+      ) : stats.totalWorkouts === 0 ? (
+        <FirstRun />
       ) : (
         <motion.div {...rise(0.12)} className="grid grid-cols-2 gap-3">
-          <Stat value={stats.weekWorkouts} label="This week" />
           <Stat
             value={formatVolume(stats.totalVolume, unit).value}
             suffix={formatVolume(stats.totalVolume, unit).suffix}
@@ -235,10 +264,11 @@ export default function Today({ profile }: { profile: UserProfile }) {
           />
           <Stat value={stats.totalWorkouts} label="Workouts" />
           <Stat value={stats.totalSets} label="Sets" />
+          <Stat value={stats.weekWorkouts} label="This week" />
         </motion.div>
       )}
 
-      {stats && (
+      {stats && stats.totalWorkouts > 0 && (
         <motion.div {...rise(0.13)} className="mt-3">
           <WeekGoal profile={profile} done={stats.weekWorkouts} />
         </motion.div>
@@ -293,13 +323,13 @@ export default function Today({ profile }: { profile: UserProfile }) {
               <button
                 key={w.id}
                 onClick={() => navigate(`/app/workout/${w.id}`)}
-                className="tab flex w-full items-center justify-between px-4 py-3.5 text-left"
+                className="tab flex min-h-[56px] w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
               >
-                <div>
-                  <p className="text-[15px] font-medium">{w.name}</p>
-                  <p className="label mt-0.5 normal-case">{w.date}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-medium">{w.name}</p>
+                  <p className="label mt-0.5 normal-case">{friendlyDate(w.date)}</p>
                 </div>
-                <span className="num text-[13px] font-semibold">✓</span>
+                <CaretRight size={16} className="shrink-0 text-[var(--ink-3)]" />
               </button>
             ))}
           </motion.div>

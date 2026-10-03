@@ -28,6 +28,31 @@ export function shortDate(iso: string): string {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+/** Whole days between two local dates, ignoring the time of day. */
+function daysApart(from: Date, to: Date): number {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * A workout date the way a person would say it out loud. "Today" and
+ * "Yesterday" matter here because the most recent sessions are the ones people
+ * scan back to, and a raw ISO string tells them nothing.
+ */
+export function friendlyDate(iso: string, today = new Date()): string {
+  const d = parseISODate(iso);
+  const diff = daysApart(d, today);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff > 1 && diff < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 /* ---------- Strength ---------- */
 
 export interface StrengthPoint {

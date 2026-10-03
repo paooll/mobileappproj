@@ -76,7 +76,12 @@ export default function RestTimerStrip({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <button onClick={onAdd} className="btn-quiet" aria-label="Add 30 seconds">
+        <button
+          onClick={onAdd}
+          className="tab flex h-11 items-center justify-center rounded-lg px-3 text-[13px] font-medium transition-transform active:scale-[0.97]"
+          style={{ background: "var(--fill)" }}
+          aria-label="Add 30 seconds to the rest timer"
+        >
           <Plus size={13} weight="bold" />30s
         </button>
         <button
@@ -88,7 +93,7 @@ export default function RestTimerStrip({
         </button>
         <button
           onClick={onDismiss}
-          className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+          className="tab flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] active:text-[var(--ink)]"
           aria-label="Skip rest"
         >
           <X size={16} />

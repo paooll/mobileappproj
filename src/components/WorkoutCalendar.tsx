@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 
+import { friendlyDate } from "../lib/progress";
+
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 function toKey(year: number, month: number, day: number) {
@@ -64,7 +66,6 @@ export default function WorkoutCalendar({
         <button
           onClick={() => shift(-1)}
           className="icon-btn"
-          style={{ width: 34, height: 34 }}
           aria-label="Previous month"
         >
           <CaretLeft size={15} weight="bold" />
@@ -85,7 +86,6 @@ export default function WorkoutCalendar({
         <button
           onClick={() => shift(1)}
           className="icon-btn"
-          style={{ width: 34, height: 34 }}
           aria-label="Next month"
         >
           <CaretRight size={15} weight="bold" />
@@ -94,7 +94,7 @@ export default function WorkoutCalendar({
 
       <div className="mt-4 grid grid-cols-7 gap-1">
         {WEEKDAYS.map((w, i) => (
-          <div key={i} className="label pb-1 text-center">
+          <div key={i} className="label pb-1 text-center" aria-hidden="true">
             {w}
           </div>
         ))}
@@ -110,8 +110,8 @@ export default function WorkoutCalendar({
               onClick={() => (has ? onSelect(isSelected ? null : key) : onSelect(null))}
               disabled={!has}
               aria-pressed={isSelected}
-              aria-label={`${key}${has ? ", workout logged" : ""}`}
-              className="flex flex-col items-center justify-center rounded-xl py-1.5 transition-transform active:scale-[0.94]"
+              aria-label={`${friendlyDate(key)}${has ? ", workout logged" : ", no workout"}`}
+              className="flex min-h-[44px] flex-col items-center justify-center rounded-xl py-1.5 transition-transform active:scale-[0.94]"
               style={{
                 background: isSelected
                   ? "var(--ink)"
@@ -124,7 +124,6 @@ export default function WorkoutCalendar({
                     ? "var(--ink)"
                     : "var(--ink-3)",
                 opacity: has || isToday ? 1 : 0.55,
-                height: 40,
               }}
             >
               <span className="num text-[13px] font-semibold">{day}</span>

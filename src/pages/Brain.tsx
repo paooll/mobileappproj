@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUp, Brain as BrainIcon, CaretLeft } from "@phosphor-icons/react";
+import { useReducedMotion } from "framer-motion";
+import { ArrowUp, Brain as BrainIcon, CaretLeft, X } from "@phosphor-icons/react";
 import { loadArchive, loadExercises, type Workout, type WorkoutSet } from "../lib/data";
 import {
   SUGGESTED_QUESTIONS,
@@ -48,6 +49,7 @@ function makeCatalog(rows: CatalogRow[]): Catalog {
 
 export default function Brain({ profile }: { profile: UserProfile }) {
   const navigate = useNavigate();
+  const reduce = useReducedMotion();
   const user = useAuthUser();
   const { toast } = useToast();
   const [unit] = useUnit();
@@ -74,7 +76,7 @@ export default function Brain({ profile }: { profile: UserProfile }) {
       })
       .catch((err) => {
         console.error(err);
-        if (!cancelled) toast("Couldn't load your history. Try again shortly.", "error");
+        if (!cancelled) toast("Couldn't load your history.", "error");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -85,8 +87,11 @@ export default function Brain({ profile }: { profile: UserProfile }) {
   }, [user, toast]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, thinking]);
+    endRef.current?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [turns, thinking, reduce]);
 
   const submit = useCallback(
     async (raw: string) => {
@@ -135,18 +140,32 @@ export default function Brain({ profile }: { profile: UserProfile }) {
   return (
     <div className="flex min-h-[100dvh] flex-col px-5 pt-[max(env(safe-area-inset-top),48px)]">
       <button
-        onClick={() => navigate(-1)}
-        className="tab -ml-2 flex items-center gap-0.5 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+        onClick={() => {
+          // Always lands somewhere real, even if opened straight from a link
+          if (window.history.length > 1) navigate(-1);
+          else navigate("/app");
+        }}
+        className="tab -ml-2 flex min-h-[44px] items-center gap-0.5 rounded-xl pr-2 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
       >
         <CaretLeft size={18} weight="bold" /> Back
       </button>
 
       <div className="mt-4 flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-[30px] font-bold tracking-[-0.02em]">Training brain</h1>
           <p className="label mt-1 normal-case">Answers from your own logged sets</p>
         </div>
-        <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-1">
+          {!empty && (
+            <button
+              onClick={() => setTurns([])}
+              className="tab flex h-11 items-center gap-1 rounded-xl px-2.5 text-[13px] font-medium text-[var(--ink-2)] transition-transform active:scale-[0.97]"
+            >
+              <X size={14} weight="bold" /> Clear
+            </button>
+          )}
+          <ThemeToggle />
+        </div>
       </div>
 
       {loading ? (
@@ -205,7 +224,15 @@ export default function Brain({ profile }: { profile: UserProfile }) {
 
           {/* Ask bar */}
           <form
-            className="sticky bottom-[calc(env(safe-area-inset-bottom)+64px)] -mx-5 mt-4 border-t border-[var(--line)] bg-[var(--bg)] px-5 py-3"
+            className="sticky bottom-[calc(env(safe-area-inset-bottom)+64px)] -mx-5 mt-4 px-5 py-3"
+            style={{
+              // Fades the thread out under the composer instead of cutting it
+              // with a hard rule, and matches the glass used by the tab bar
+              background: "var(--glass-bg)",
+              backdropFilter: "blur(20px) saturate(1.8)",
+              WebkitBackdropFilter: "blur(20px) saturate(1.8)",
+              borderTop: "1px solid var(--glass-border)",
+            }}
             onSubmit={(e) => {
               e.preventDefault();
               submit(question);
@@ -222,12 +249,12 @@ export default function Brain({ profile }: { profile: UserProfile }) {
               />
               <button
                 type="submit"
-                className="icon-btn shrink-0"
+                className="btn-solid shrink-0 !px-0"
+                style={{ width: 48 }}
                 disabled={!question.trim() || thinking}
-                style={!question.trim() || thinking ? { opacity: 0.4 } : undefined}
                 aria-label="Ask"
               >
-                <ArrowUp size={17} weight="bold" />
+                <ArrowUp size={18} weight="bold" />
               </button>
             </div>
           </form>

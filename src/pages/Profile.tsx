@@ -22,6 +22,8 @@ import {
   type RestSettings,
 } from "../lib/restTimer";
 import { EXPERIENCE_OPTIONS, GOAL_OPTIONS, type UserProfile } from "../lib/profile";
+import { friendlyDate } from "../lib/progress";
+import Switch from "../components/Switch";
 
 function SettingRow({
   label,
@@ -54,6 +56,7 @@ export default function Profile({ profile }: { profile: UserProfile }) {
     new Map()
   );
   const [loading, setLoading] = useState(true);
+  const [archiveError, setArchiveError] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
 
@@ -90,6 +93,7 @@ export default function Profile({ profile }: { profile: UserProfile }) {
     if (!user) return;
     let cancelled = false;
     setLoading(true);
+    setArchiveError(false);
     loadArchive(user.uid)
       .then(({ workouts: w, setsByWorkout: s }) => {
         if (cancelled) return;
@@ -101,7 +105,8 @@ export default function Profile({ profile }: { profile: UserProfile }) {
         console.error(err);
         if (cancelled) return;
         setLoading(false);
-        toast("Couldn't load your stats. Pull to refresh later.", "error");
+        setArchiveError(true);
+        toast("Couldn't load your stats.", "error");
       });
     return () => {
       cancelled = true;
@@ -161,6 +166,22 @@ export default function Profile({ profile }: { profile: UserProfile }) {
     }
   }, [exporting, user, unit, stats, workouts, setsByWorkout, toast]);
 
+  const retryArchive = useCallback(() => {
+    if (!user) return;
+    setLoading(true);
+    setArchiveError(false);
+    loadArchive(user.uid)
+      .then(({ workouts: w, setsByWorkout: s }) => {
+        setWorkouts(w);
+        setSetsByWorkout(s);
+      })
+      .catch((err) => {
+        console.error(err);
+        setArchiveError(true);
+      })
+      .finally(() => setLoading(false));
+  }, [user]);
+
   const doSignOut = async () => {
     try {
       await signOut();
@@ -182,8 +203,11 @@ export default function Profile({ profile }: { profile: UserProfile }) {
 
       <div className="panel mt-6 p-5">
         <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--ink)] text-[18px] font-bold text-[var(--bg)]">
-            R
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--ink)] text-[18px] font-bold text-[var(--bg)]"
+            aria-hidden="true"
+          >
+            {(user?.email?.[0] ?? "R").toUpperCase()}
           </div>
           <div className="min-w-0">
             <p className="truncate text-[16px] font-semibold">
@@ -316,17 +340,11 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             rest.seconds * 1000
           )}.`}
         >
-          <button
-            onClick={() => updateRest({ autoStart: !rest.autoStart })}
-            aria-pressed={rest.autoStart}
-            className="tab relative flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-[12px] font-semibold transition-colors"
-            style={{
-              background: rest.autoStart ? "var(--ink)" : "var(--fill)",
-              color: rest.autoStart ? "var(--bg)" : "var(--ink-2)",
-            }}
-          >
-            {rest.autoStart ? "On" : "Off"}
-          </button>
+          <Switch
+            checked={rest.autoStart}
+            onChange={(next) => updateRest({ autoStart: next })}
+            label="Start the rest timer after every set"
+          />
         </SettingRow>
 
         <div className="panel p-4">
@@ -393,6 +411,20 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             <div key={i} className="h-8 animate-pulse rounded-lg bg-[var(--fill)]" />
           ))}
         </div>
+      ) : archiveError ? (
+        <div className="panel flex flex-col items-center gap-3 px-6 py-9 text-center">
+          <p className="text-[15px] font-medium">Records didn't load</p>
+          <p className="max-w-[28ch] text-[13px] text-[var(--ink-2)]">
+            Check your connection and try again.
+          </p>
+          <button
+            onClick={retryArchive}
+            disabled={!user}
+            className="btn-line"
+          >
+            Try again
+          </button>
+        </div>
       ) : records.length === 0 ? (
         <div className="panel flex flex-col items-center px-6 py-10 text-center">
           <Trophy size={22} className="text-[var(--ink-3)]" />
@@ -407,7 +439,7 @@ export default function Profile({ profile }: { profile: UserProfile }) {
               <div className="min-w-0">
                 <p className="truncate text-[15px] font-medium">{r.exerciseName}</p>
                 <p className="label mt-0.5 normal-case">
-                  {r.date}
+                  {friendlyDate(r.date)}
                   <span className="mx-1.5 inline-flex items-center gap-0.5 align-middle">
                     <Check size={10} weight="bold" />
                     {r.reps} reps
@@ -432,6 +464,11 @@ export default function Profile({ profile }: { profile: UserProfile }) {
       >
         <SignOut size={16} /> Sign out
       </button>
+
+      <p className="mt-4 text-center text-[12px] leading-relaxed text-[var(--ink-3)]">
+        Your sessions live in your own account. Export a copy any time from
+        above.
+      </p>
 
       <p className="mt-12 text-center text-[13px] text-[var(--ink-3)]">Reprange</p>
     </div>

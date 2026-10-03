@@ -27,7 +27,7 @@ export default function RepeatSet({ last, unit, onRepeat }: Props) {
       transition={{ duration: 0.18 }}
       onClick={() => onRepeat(last.weight, last.reps)}
       className="tab flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--fill)] px-3 text-[13px] font-medium transition-transform active:scale-[0.97]"
-      style={{ height: 36 }}
+      style={{ height: 40 }}
       aria-label={`Repeat last set, ${label} ${unit}`}
     >
       <ArrowCounterClockwise size={14} weight="bold" />

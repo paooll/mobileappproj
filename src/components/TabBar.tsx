@@ -23,15 +23,21 @@ export default function TabBar() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `tab flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2 text-[11px] font-medium transition-colors ${
+              `tab flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-medium transition-colors ${
                 isActive
                   ? "bg-[var(--fill)] text-[var(--ink)]"
                   : "text-[var(--ink-3)]"
               }`
             }
           >
-            <Icon size={21} weight={undefined} />
-            {label}
+            {({ isActive }) => (
+              <>
+                {/* The glyph itself carries the active state, so the tab reads
+                    as selected even at a glance or to a screen reader */}
+                <Icon size={22} weight={isActive ? "fill" : "regular"} />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </div>

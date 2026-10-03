@@ -9,7 +9,7 @@ interface Props {
 /** Horizontal scroll-snap row of filter chips, matching the app's quiet-button style. */
 export default function ChipRow({ options, value, onChange, label }: Props) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {options.map((o) => (
         <button
           key={o}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { CaretLeft, CaretRight, X, ImageSquare } from "@phosphor-icons/react";
 import type { Exercise } from "../lib/data";
@@ -19,6 +19,17 @@ export default function ExerciseDetail({
   const [broken, setBroken] = useState<Set<number>>(new Set());
   const imgs = exercise.images ?? [];
   const visible = imgs.filter((_, i) => !broken.has(i));
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Escape closes, and focus lands on the control that dismisses the sheet
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const step = (dir: 1 | -1) =>
     setImg((i) => Math.min(Math.max(i + dir, 0), imgs.length - 1));
@@ -64,6 +75,7 @@ export default function ExerciseDetail({
               </p>
             </div>
             <button
+              ref={closeRef}
               onClick={onClose}
               className="icon-btn shrink-0"
               aria-label="Close"
@@ -100,35 +112,42 @@ export default function ExerciseDetail({
                     {img > 0 && (
                       <button
                         onClick={() => step(-1)}
-                        className="glass absolute left-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full"
+                        className="glass absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full"
                         aria-label="Previous image"
                       >
-                        <CaretLeft size={14} weight="bold" />
+                        <CaretLeft size={16} weight="bold" />
                       </button>
                     )}
                     {img < imgs.length - 1 && (
                       <button
                         onClick={() => step(1)}
-                        className="glass absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full"
+                        className="glass absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full"
                         aria-label="Next image"
                       >
-                        <CaretRight size={14} weight="bold" />
+                        <CaretRight size={16} weight="bold" />
                       </button>
                     )}
-                    <div className="absolute bottom-2.5 left-1/2 flex -translate-x-1/2 gap-1.5">
+                    <div className="absolute inset-x-0 bottom-1 flex justify-center gap-1.5">
                       {imgs.map((_, i) => (
+                        // Padding gives each dot a 44px tall target without
+                        // making the visible indicator any bigger
                         <button
                           key={i}
                           onClick={() => setImg(i)}
                           aria-label={`Image ${i + 1}`}
-                          className="h-1.5 rounded-full transition-all"
-                          style={{
-                            width: i === img ? 14 : 5,
-                            background:
-                              i === img ? "var(--ink)" : "var(--ink-3)",
-                            opacity: i === img ? 1 : 0.4,
-                          }}
-                        />
+                          aria-current={i === img}
+                          className="flex h-8 w-8 items-center justify-center"
+                        >
+                          <span
+                            className="block h-1.5 rounded-full transition-all"
+                            style={{
+                              width: i === img ? 14 : 5,
+                              background:
+                                i === img ? "var(--ink)" : "var(--ink-3)",
+                              opacity: i === img ? 1 : 0.4,
+                            }}
+                          />
+                        </button>
                       ))}
                     </div>
                   </>

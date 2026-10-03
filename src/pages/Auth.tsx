@@ -100,11 +100,18 @@ export default function Auth() {
             type="email"
             required
             autoComplete="email"
+            inputMode="email"
             autoCapitalize="none"
             autoCorrect="off"
+            spellCheck={false}
             enterKeyHint="next"
+            aria-invalid={!!error}
+            aria-describedby={error ? "auth-error" : undefined}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) setError(null);
+            }}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -119,16 +126,31 @@ export default function Auth() {
             minLength={6}
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
             enterKeyHint="go"
+            aria-invalid={!!error}
+            aria-describedby={error ? "auth-error" : undefined}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError(null);
+            }}
           />
         </div>
         {error && (
-          <p role="alert" className="text-[13px] font-medium text-[#e5484d]">
+          <p
+            id="auth-error"
+            role="alert"
+            className="rounded-xl px-3 py-2.5 text-[13px] font-medium"
+            style={{ background: "var(--fill)", color: "var(--danger)" }}
+          >
             {error}
           </p>
         )}
-        <button type="submit" className="btn-solid mt-2 w-full" disabled={busy || googleBusy}>
+        <button
+          type="submit"
+          className="btn-solid mt-2 w-full"
+          disabled={busy || googleBusy}
+          style={busy || googleBusy ? { opacity: 0.6 } : undefined}
+        >
           {busy ? "One moment…" : mode === "signin" ? "Sign in" : "Create account"}
         </button>
       </form>
@@ -143,6 +165,7 @@ export default function Auth() {
         onClick={google}
         disabled={busy || googleBusy}
         className="btn-line w-full"
+        style={busy || googleBusy ? { opacity: 0.6 } : undefined}
       >
         <GoogleLogo size={17} weight="bold" />
         {googleBusy ? "Opening Google…" : "Continue with Google"}
@@ -153,7 +176,7 @@ export default function Auth() {
           setMode(mode === "signin" ? "signup" : "signin");
           setError(null);
         }}
-        className="tab mt-6 pb-8 text-center text-[14px] font-medium transition-opacity active:opacity-60"
+        className="tab mt-6 min-h-[44px] w-full pb-8 text-center text-[14px] font-medium transition-opacity active:opacity-60"
       >
         {mode === "signin"
           ? "New here? Create an account"

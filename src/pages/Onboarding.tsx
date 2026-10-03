@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check } from "@phosphor-icons/react";
@@ -8,6 +8,7 @@ import {
   EXPERIENCE_OPTIONS,
   GOAL_OPTIONS,
   EQUIPMENT_OPTIONS,
+  loadProfile,
   saveProfile,
   type Experience,
   type Goal,
@@ -31,6 +32,25 @@ export default function Onboarding() {
   const [days, setDays] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // Edit mode, reached from Profile. Setup starts with the answers already given.
+  const [editing, setEditing] = useState(false);
+
+  // Prefill from the stored profile so editing never means retyping everything
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    loadProfile(user.uid).then((p) => {
+      if (cancelled || !p) return;
+      setEditing(true);
+      setExperience(p.experience);
+      setGoal(p.goal);
+      setDays(p.daysPerWeek);
+      setEquipment(p.equipment);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const slide = reduce
     ? {}
@@ -65,7 +85,7 @@ export default function Onboarding() {
         equipment,
         unit,
       });
-      navigate("/app", { replace: true });
+      navigate("/app/profile", { replace: true });
     } catch (err) {
       console.error(err);
       toast("Couldn't save your setup. Try again.", "error");
@@ -77,14 +97,27 @@ export default function Onboarding() {
     <div className="flex min-h-[100dvh] flex-col px-5 pt-[max(env(safe-area-inset-top),32px)] pb-[max(env(safe-area-inset-bottom),24px)]">
       {/* Progress rail — four segments, filled as far as you have got */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => (step > 0 ? setStep(step - 1) : navigate("/app"))}
-          className="tab -ml-2 flex h-10 w-10 items-center justify-center rounded-full text-[var(--ink-2)] transition-opacity active:opacity-50"
-          aria-label={step > 0 ? "Go back" : "Skip for now"}
+        {/* Step 0 has nowhere to go back to, and leaving mid-setup would
+            strand the account without a profile, so the control is absent */}
+        {step > 0 ? (
+          <button
+            onClick={() => setStep(step - 1)}
+            className="tab -ml-2 flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-2)] transition-opacity active:opacity-50"
+            aria-label="Go back a step"
+          >
+            <ArrowLeft size={17} weight="bold" />
+          </button>
+        ) : (
+          <span className="w-3" />
+        )}
+        <div
+          className="flex flex-1 gap-1.5"
+          role="progressbar"
+          aria-label={`Setup step ${step + 1} of ${STEPS.length}`}
+          aria-valuenow={step + 1}
+          aria-valuemin={1}
+          aria-valuemax={STEPS.length}
         >
-          <ArrowLeft size={17} weight="bold" />
-        </button>
-        <div className="flex flex-1 gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={STEPS.length}>
           {STEPS.map((s, i) => (
             <div
               key={s}
@@ -105,7 +138,9 @@ export default function Onboarding() {
                   Where are you starting from?
                 </h1>
                 <p className="mt-2 max-w-[34ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
-                  This tunes the starting weights and how much detail you see.
+                  {editing
+                    ? "Change anything here and it applies to future sessions."
+                    : "This tunes the starting weights and how much detail you see."}
                 </p>
                 <div className="mt-7 flex flex-col gap-2">
                   {EXPERIENCE_OPTIONS.map((o) => {
@@ -284,7 +319,7 @@ export default function Onboarding() {
             className="btn-solid flex-1"
             style={saving ? { opacity: 0.6 } : undefined}
           >
-            {saving ? "Setting up…" : "Start training"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Start training"}
           </button>
         )}
       </div>

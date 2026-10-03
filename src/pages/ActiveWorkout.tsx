@@ -33,6 +33,7 @@ import Stepper from "../components/Stepper";
 import RestTimerStrip from "../components/RestTimer";
 import ExerciseDetail from "../components/ExerciseDetail";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
+import { friendlyDate } from "../lib/progress";
 
 // Resolved once at module load so render stays free of impure calls.
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -212,6 +213,9 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
       : (coachIndex.last.get(selected.name) ?? null);
   }, [selected, sets, coachIndex]);
 
+  /** A finished workout is a record to read, not an editor to poke at. */
+  const readOnly = !!workout?.completed;
+
   const startRest = (context: string) => {
     setRestFrom(context);
     timer.start();
@@ -274,11 +278,30 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     }
   };
 
+  const removeSetWithUndo = async (set: WorkoutSet) => {
+    if (!id) return;
+    try {
+      await removeSet(id, set.id);
+      toast(`${set.weight ? toDisplay(set.weight, unit) + " kg " : ""}${set.reps} reps removed.`, "info", {
+        label: "Undo",
+        onClick: () => {
+          addSet(id, set.exerciseName, set.weight, set.reps, set.order).catch((err) => {
+            console.error(err);
+            toast("Couldn't restore that set.", "error");
+          });
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't remove the set. Try again.", "error");
+    }
+  };
+
   const finish = async () => {
     if (!id) return;
     try {
       await finishWorkout(id);
-      toast("Workout finished. Nice work! 💪", "success");
+      toast("Workout finished. Nice work.", "success");
       navigate("/app", { replace: true });
     } catch (err) {
       console.error(err);
@@ -292,36 +315,45 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
       // Leave room for the sticky logging bar, measured live so the coach strip,
       // rest clock and picker can all change height without covering the list
       style={{
-        paddingBottom: `calc(${barHeight}px + 84px + env(safe-area-inset-bottom) + 24px)`,
+        paddingBottom: readOnly
+          ? "calc(84px + env(safe-area-inset-bottom) + 24px)"
+          : `calc(${barHeight}px + 84px + env(safe-area-inset-bottom) + 24px)`,
       }}
     >
       <header className="flex items-center justify-between">
         <button
-          onClick={() => navigate("/app")}
-          className="tab flex items-center gap-0.5 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+          onClick={() => {
+            // Always lands somewhere real, even if opened straight from a link
+            if (window.history.length > 1) navigate(-1);
+            else navigate("/app");
+          }}
+          className="tab -ml-2 flex min-h-[44px] items-center gap-0.5 rounded-xl pr-2 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
         >
-          <CaretLeft size={18} weight="bold" /> Today
+          <CaretLeft size={18} weight="bold" /> Back
         </button>
-        <button
-          onClick={finish}
-          className="tab flex items-center gap-1.5 rounded-xl bg-[var(--ink)] px-4 text-[14px] font-semibold text-[var(--bg)] transition-transform active:scale-[0.97]"
-          style={{ height: 40 }}
-        >
-          <Check size={15} weight="bold" /> Finish
-        </button>
+        {!readOnly && (
+          <button
+            onClick={finish}
+            className="tab flex min-h-[44px] items-center gap-1.5 rounded-xl bg-[var(--ink)] px-4 text-[14px] font-semibold text-[var(--bg)] transition-transform active:scale-[0.97]"
+          >
+            <Check size={15} weight="bold" /> Finish
+          </button>
+        )}
       </header>
 
-      <h1 className="mt-5 text-[30px] font-bold tracking-[-0.02em]">{name}</h1>
+      <h1 className="mt-3 text-[30px] font-bold tracking-[-0.02em]">{name}</h1>
       <p className="label mt-1 normal-case">
-        {sets.length} {sets.length === 1 ? "set" : "sets"} · updates live
-      </p>
-
-      <div className="mt-7 flex flex-col gap-4">
+        {readOnly
+          ? `${friendlyDate(workout?.date ?? TODAY)} · ${sets.length} ${
+              sets.length === 1 ? "set" : "sets"
+            } logged`
+          : `${sets.length} ${sets.length === 1 ? "set" : "sets"} · updates live`}
+      </p><div className="mt-7 flex flex-col gap-4">
         {grouped.map(([exName, exSets]) => (
           <div key={exName} className="panel p-4">
-            <div className="flex items-baseline justify-between">
-              <h3 className="text-[16px] font-semibold">{exName}</h3>
-              <span className="label">{exSets.length} sets</span>
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="min-w-0 truncate text-[16px] font-semibold">{exName}</h3>
+              <span className="label shrink-0">{exSets.length} sets</span>
             </div>
             <div className="mt-3 flex flex-col gap-1.5">
               <AnimatePresence initial={false}>
@@ -336,26 +368,31 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                   >
                     <span className="label w-6">{i + 1}</span>
                     <span className="num text-[17px] font-semibold">
-                      {toDisplay(s.weight, unit)}
-                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
-                        {unit}
-                      </span>
-                      <span className="mx-2 text-[var(--ink-3)]">×</span>
+                      {s.weight > 0 ? (
+                        <>
+                          {toDisplay(s.weight, unit)}
+                          <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
+                            {unit}
+                          </span>
+                          <span className="mx-2 text-[var(--ink-3)]">×</span>
+                        </>
+                      ) : (
+                        <span className="mr-2 text-[var(--ink-3)]">Bodyweight</span>
+                      )}
                       {s.reps}
-                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">reps</span>
+                      <span className="ml-0.5 text-[12px] font-medium text-[var(--ink-3)]">
+                        reps
+                      </span>
                     </span>
-                    <button
-                      onClick={() => {
-                        if (id)
-                          removeSet(id, s.id).catch(() =>
-                            toast("Couldn't remove the set. Try again.", "error")
-                          );
-                      }}
-                      className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
-                      aria-label="Remove set"
-                    >
-                      <X size={15} />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        onClick={() => removeSetWithUndo(s)}
+                        className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--line)] active:text-[var(--ink)]"
+                        aria-label={`Remove set ${i + 1} of ${exName}`}
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -364,7 +401,17 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         ))}
       </div>
 
-      {/* Sticky logging bar, with the rest clock stacked above it */}
+      {readOnly && sets.length === 0 && (
+        <div className="panel mt-7 px-6 py-10 text-center">
+          <p className="max-w-[28ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+            This session was finished without any sets logged.
+          </p>
+        </div>
+      )}
+
+      {/* Sticky logging bar, with the rest clock stacked above it. A finished
+          session has nothing to log, so the bar is not rendered at all. */}
+      {!readOnly && (
       <div
         ref={barRef}
         className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 px-5"
@@ -392,13 +439,26 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                   className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
                 />
                 <input
-                  autoFocus
-                  className="field pl-10"
+                  // No autofocus on touch: the keyboard would cover the list the
+                  // picker just opened to show
+                  autoFocus={false}
+                  className="field pl-10 pr-10"
                   placeholder="Search 876 exercises"
                   enterKeyHint="search"
+                  type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search exercises"
                 />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+                  >
+                    <X size={15} weight="bold" />
+                  </button>
+                )}
               </div>
               <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain">
                 {filtered.map((e) => {
@@ -410,7 +470,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                     >
                       <button
                         onClick={() => chooseExercise(e)}
-                        className="tab min-w-0 flex-1 py-2.5 text-left"
+                        className="tab min-h-[56px] min-w-0 flex-1 py-2.5 text-left"
                       >
                         <span className="block truncate text-[15px]">{e.name}</span>
                         {last && (
@@ -422,10 +482,10 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                       <span className="label ml-2 shrink-0">{e.muscleGroup}</span>
                       <button
                         onClick={() => setDetailEx(e)}
-                        className="tab shrink-0 p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+                        className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] active:text-[var(--ink)]"
                         aria-label={`How to do ${e.name}`}
                       >
-                        <Info size={15} />
+                        <Info size={16} />
                       </button>
                     </div>
                   );
@@ -498,7 +558,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                       key={r}
                       onClick={() => setRepsCount(r)}
                       aria-pressed={repsCount === r}
-                      className={`btn-quiet num px-0 ${lastSet ? "w-10 shrink-0" : "flex-1"}`}
+                      aria-label={`${r} reps`}
+                      className={`btn-quiet num px-0 ${lastSet ? "w-11 shrink-0" : "flex-1"}`}
                       style={repsCount === r ? { background: "var(--ink)", color: "var(--bg)" } : undefined}
                     >
                       {r}
@@ -527,6 +588,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
           )}
         </div>
       </div>
+      )}
 
       <AnimatePresence>
         {detailEx && <ExerciseDetail exercise={detailEx} onClose={() => setDetailEx(null)} />}

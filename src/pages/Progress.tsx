@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CaretLeft, ChartLine, TrendDown, TrendUp } from "@phosphor-icons/react";
 import { loadArchive, type Workout, type WorkoutSet } from "../lib/data";
@@ -42,7 +42,7 @@ export default function Progress() {
       })
       .catch((err) => {
         console.error(err);
-        if (!cancelled) toast("Couldn't load your progress. Pull to refresh later.", "error");
+        if (!cancelled) toast("Couldn't load your progress.", "error");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -56,6 +56,12 @@ export default function Progress() {
     () => exerciseSummaries(workouts, setsByWorkout),
     [workouts, setsByWorkout]
   );
+
+  /** Back always leads somewhere real, even if this page was opened directly. */
+  const goBack = useCallback(() => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/app");
+  }, [navigate]);
 
   // Until the athlete picks a lift, show the strongest one on record
   const activeLift = lift || summaries[0]?.exerciseName || "";
@@ -80,8 +86,8 @@ export default function Progress() {
     return (
       <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
         <button
-          onClick={() => navigate(-1)}
-          className="tab -ml-2 flex items-center gap-0.5 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+          onClick={goBack}
+          className="tab -ml-2 flex min-h-[44px] items-center gap-0.5 rounded-xl pr-2 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
         >
           <CaretLeft size={18} weight="bold" /> Back
         </button>
@@ -102,8 +108,8 @@ export default function Progress() {
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
       <button
-        onClick={() => navigate(-1)}
-        className="tab -ml-2 flex items-center gap-0.5 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
+        onClick={goBack}
+        className="tab -ml-2 flex min-h-[44px] items-center gap-0.5 rounded-xl pr-2 text-[15px] font-medium text-[var(--ink-2)] transition-opacity active:opacity-60"
       >
         <CaretLeft size={18} weight="bold" /> Back
       </button>
@@ -130,6 +136,11 @@ export default function Progress() {
             }}
             label="All lifts"
           />
+          {summaries.length > 1 && (
+            <p className="mt-2 text-[12px] text-[var(--ink-3)]">
+              {summaries.length} lifts on record. Swipe the row for the rest.
+            </p>
+          )}
 
           {/* Estimated one rep max over time */}
           <div className="panel mt-4 p-4">

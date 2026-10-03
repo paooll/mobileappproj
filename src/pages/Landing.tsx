@@ -64,7 +64,7 @@ function AppPreview() {
         className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl text-[13px] font-semibold"
         style={{ background: "#f5f5f5", color: "#0c0c0d" }}
       >
-        Add set
+        Log set
       </div>
     </div>
   );
@@ -166,7 +166,7 @@ export default function Landing() {
         <section className="border-t border-[var(--line)] py-20">
           <div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
             {[
-              ["2 taps", "to log a set. Weight, reps, done. All under the rest clock."],
+              ["2 taps", "to log a set. Steppers for weight and reps, then Log set."],
               ["1 number", "your streak. Show up and it grows. Miss a day, start over."],
               ["0 clutter", "no feeds, no badges, no noise. Sets and progress only."],
             ].map(([head, body], i) => (
@@ -180,7 +180,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="border-t border-[#e8e8e8] py-20 text-center">
+        <section className="border-t border-[var(--line)] py-20 text-center">
           <motion.h2
             {...fade()}
             className="mx-auto max-w-[18ch] text-[30px] font-bold leading-tight tracking-[-0.02em]"

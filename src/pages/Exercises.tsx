@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MagnifyingGlass, ArrowClockwise, FunnelSimple } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowClockwise, FunnelSimple, X } from "@phosphor-icons/react";
 import { loadExercises, type Exercise } from "../lib/data";
 import ThemeToggle from "../components/ThemeToggle";
 import ExerciseDetail from "../components/ExerciseDetail";
@@ -10,6 +10,9 @@ const GROUPS = ["All", "Chest", "Back", "Shoulders", "Arms", "Legs", "Abs", "Oth
 
 const CORE_GROUPS = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Abs"];
 
+/** Rows rendered before the "show more" control appears. */
+const PAGE = 80;
+
 export default function Exercises() {
   const [exercises, setExercises] = useState<Exercise[] | null>(null);
   const [search, setSearch] = useState("");
@@ -17,6 +20,8 @@ export default function Exercises() {
   const [equipment, setEquipment] = useState("All");
   const [detail, setDetail] = useState<Exercise | null>(null);
   const [failed, setFailed] = useState(false);
+  // 876 rows is a lot of DOM for a phone. Render a page at a time instead.
+  const [shown, setShown] = useState(PAGE);
 
   const load = () => {
     setFailed(false);
@@ -30,6 +35,11 @@ export default function Exercises() {
   };
 
   useEffect(load, []);
+
+  // A new search or filter starts from the top of the list again
+  useEffect(() => {
+    setShown(PAGE);
+  }, [search, group, equipment]);
 
   // Equipment options come from the catalog itself, so new equipment types
   // appear automatically as the dataset grows.
@@ -58,9 +68,25 @@ export default function Exercises() {
       map.set(e.muscleGroup, arr);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [exercises, search, group]);
+  }, [exercises, search, group, equipment]);
 
   const total = exercises?.length ?? 0;
+  const matchCount = useMemo(
+    () => grouped.reduce((n, [, list]) => n + list.length, 0),
+    [grouped]
+  );
+
+  /** The groups that fit in the current page, and how many rows are hidden. */
+  const paged = useMemo(() => {
+    let budget = shown;
+    const out: [string, Exercise[]][] = [];
+    for (const entry of grouped) {
+      if (budget <= 0) break;
+      out.push([entry[0], entry[1].slice(0, budget)]);
+      budget -= entry[1].length;
+    }
+    return { rows: out, hidden: Math.max(0, matchCount - shown) };
+  }, [grouped, shown, matchCount]);
 
   return (
     <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
@@ -76,13 +102,24 @@ export default function Exercises() {
           className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
         />
         <input
-          className="field pl-10"
+          className="field pl-10 pr-12"
           placeholder="Search exercises"
           enterKeyHint="search"
+          type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search exercises"
         />
+        {/* Clear sits inside the field so the text never has to be selected by hand */}
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
+          >
+            <X size={15} weight="bold" />
+          </button>
+        )}
       </div>
 
       {/* Muscle group chips */}
@@ -151,7 +188,7 @@ export default function Exercises() {
           </button>
         </div>
       ) : (
-        grouped.map(([muscle, list]) => (
+        paged.rows.map(([muscle, list]) => (
           <div key={muscle} className="mt-8">
             <h2 className="label mb-2">{muscle}</h2>
             <div className="panel divide-y divide-[var(--line)]">
@@ -159,7 +196,7 @@ export default function Exercises() {
                 <button
                   key={e.id}
                   onClick={() => setDetail(e)}
-                  className="tab flex w-full items-center justify-between px-4 py-3 text-left text-[15px] transition-opacity active:opacity-60"
+                  className="tab flex min-h-[48px] w-full items-center justify-between px-4 py-3 text-left text-[15px] transition-opacity active:opacity-60"
                 >
                   <span className="truncate pr-2">{e.name}</span>
                   <span className="label ml-2 shrink-0">{e.equipment}</span>
@@ -169,6 +206,15 @@ export default function Exercises() {
           </div>
         ))
       ) : null}
+
+      {paged.hidden > 0 && (
+        <button
+          onClick={() => setShown((n) => n + PAGE)}
+          className="btn-line mt-6 w-full"
+        >
+          Show {Math.min(paged.hidden, PAGE)} more of {matchCount}
+        </button>
+      )}
 
       <AnimatePresence>
         {detail && <ExerciseDetail exercise={detail} onClose={() => setDetail(null)} />}

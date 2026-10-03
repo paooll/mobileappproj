@@ -235,15 +235,22 @@ export async function addSet(
   workoutId: string,
   exerciseName: string,
   weight: number,
-  reps: number
+  reps: number,
+  /** Pass a position to put a set back where it was, e.g. when undoing a removal. */
+  atOrder?: number
 ) {
   const setsRef = collection(db, "workouts", workoutId, "sets");
-  const existing = await getDocs(setsRef);
+  let order = atOrder;
+  if (order === undefined) {
+    const existing = await getDocs(setsRef);
+    order = existing.size;
+  }
+  invalidateArchive();
   await addDoc(setsRef, {
     exerciseName,
     weight,
     reps,
-    order: existing.size,
+    order,
   });
 }
 

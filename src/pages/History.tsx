@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trash } from "@phosphor-icons/react";
+import ConfirmSheet from "../components/ConfirmSheet";
 import {
   subscribeWorkouts,
   subscribeSets,
@@ -12,6 +13,7 @@ import { useToast } from "../components/Toast";
 import ThemeToggle from "../components/ThemeToggle";
 import WorkoutCalendar from "../components/WorkoutCalendar";
 import { formatVolume, useUnit } from "../lib/units";
+import { friendlyDate } from "../lib/progress";
 
 export default function History() {
   const user = useAuthUser();
@@ -19,19 +21,24 @@ export default function History() {
   const [setsCount, setSetsCount] = useState<Map<string, number>>(new Map());
   const [setsVolume, setSetsVolume] = useState<Map<string, number>>(new Map());
   const [dayFilter, setDayFilter] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Workout | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [unit] = useUnit();
 
-  const remove = async (id: string) => {
-    if (!window.confirm("Delete this workout and all its sets? This can't be undone."))
-      return;
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try {
-      await deleteWorkout(id);
-      toast("Workout deleted.", "success");
+      await deleteWorkout(pendingDelete.id);
+      toast(`${pendingDelete.name} deleted.`, "success");
+      setPendingDelete(null);
     } catch (err) {
       console.error(err);
       toast("Couldn't delete the workout. Try again.", "error");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -94,6 +101,9 @@ export default function History() {
       <p className="label mt-1 normal-case">
         {completed.length} completed {completed.length === 1 ? "workout" : "workouts"}
       </p>
+      <p className="mt-1 text-[13px] text-[var(--ink-3)]">
+        Tap a session to see every set it holds.
+      </p>
 
       {completed.length > 0 && (
         <WorkoutCalendar
@@ -104,13 +114,7 @@ export default function History() {
       )}
 
       {dayFilter && (
-        <p className="label mt-6 normal-case">
-          Showing {new Date(`${dayFilter}T00:00:00`).toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
-        </p>
+        <p className="label mt-6 normal-case">Showing {friendlyDate(dayFilter)}</p>
       )}
 
       {completed.length === 0 ? (
@@ -135,30 +139,40 @@ export default function History() {
             const vol = setsVolume.get(w.id);
             const volText = vol ? formatVolume(vol, unit) : null;
             return (
-            <div key={w.id} className="flex items-center justify-between px-4 py-3.5">
-              <button
-                className="tab flex-1 text-left transition-opacity active:opacity-60"
-                onClick={() => navigate(`/app/workout/${w.id}`)}
-              >
-                <p className="text-[15px] font-medium">{w.name}</p>
-                <p className="label mt-0.5 normal-case">
-                  {w.date}
-                  {setsCount.has(w.id) ? ` · ${setsCount.get(w.id)} sets` : ""}
-                  {volText ? ` · ${volText.value} ${volText.suffix}` : ""}
-                </p>
-              </button>
-              <button
-                onClick={() => remove(w.id)}
-                className="tab p-2 text-[var(--ink-3)] transition-colors active:text-[var(--ink)]"
-                aria-label="Delete workout"
-              >
-                <Trash size={16} />
-              </button>
-            </div>
+              <div key={w.id} className="flex items-center gap-1 pr-1">
+                <button
+                  className="tab min-h-[56px] min-w-0 flex-1 text-left transition-opacity active:opacity-60"
+                  onClick={() => navigate(`/app/workout/${w.id}`)}
+                >
+                  <p className="truncate text-[15px] font-medium">{w.name}</p>
+                  <p className="label mt-0.5 normal-case">
+                    {friendlyDate(w.date)}
+                    {setsCount.has(w.id) ? ` · ${setsCount.get(w.id)} sets` : ""}
+                    {volText ? ` · ${volText.value} ${volText.suffix}` : ""}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setPendingDelete(w)}
+                  className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] active:text-[var(--danger)]"
+                  aria-label={`Delete ${w.name}`}
+                >
+                  <Trash size={16} />
+                </button>
+              </div>
             );
           })}
         </div>
       )}
+
+      <ConfirmSheet
+        open={pendingDelete !== null}
+        title={`Delete ${pendingDelete?.name ?? "workout"}?`}
+        body={`Every set logged in this session goes with it. This cannot be undone.`}
+        confirmLabel="Delete workout"
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
