@@ -22,6 +22,7 @@ import {
   type RecentArchive,
 } from "../lib/coach";
 import { clampReps, loadStep, quickReps, snapWeight } from "../lib/setEntry";
+import { createPost } from "../lib/social";
 import { setHapticsEnabled, tick } from "../lib/haptics";
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
@@ -57,6 +58,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
 
   const [picker, setPicker] = useState(false);
+  // Finish is not idempotent: two taps would post the same session twice.
+  const [finishing, setFinishing] = useState(false);
   const [selected, setSelected] = useState<Exercise | null>(null);
   // Weight is kept in kilograms, the same unit Firestore stores. Reps are a count.
   const [weightKg, setWeightKg] = useState(0);
@@ -305,15 +308,32 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   };
 
   const finish = async () => {
-    if (!id) return;
+    if (!id || finishing) return;
+    setFinishing(true);
     try {
       await finishWorkout(id);
-      toast("Workout finished. Nice work.", "success");
-      navigate("/app", { replace: true });
     } catch (err) {
       console.error(err);
       toast("Couldn't finish the workout. Try again.", "error");
+      setFinishing(false);
+      return;
     }
+    // Sharing never blocks the finish. The session is already saved, so a
+    // failed post is a feed that stays quiet rather than a lost workout.
+    try {
+      await createPost({
+        authorUid: user?.uid ?? "",
+        authorName: profile.displayName,
+        workoutName: workout?.name ?? "Workout",
+        sets: sets.length,
+        volumeKg: sets.reduce((sum, s) => sum + s.weight * s.reps, 0),
+        date: workout?.date ?? TODAY,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+    toast("Workout finished. Nice work.", "success");
+    navigate("/app", { replace: true });
   };
 
   return (
@@ -341,9 +361,10 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         {!readOnly && (
           <button
             onClick={finish}
-            className="tab flex min-h-[44px] items-center gap-1.5 rounded-xl bg-[var(--ink)] px-4 text-[14px] font-semibold text-[var(--bg)] transition-transform active:scale-[0.97]"
+            disabled={finishing}
+            className="tab flex min-h-[44px] items-center gap-1.5 rounded-xl bg-[var(--ink)] px-4 text-[14px] font-semibold text-[var(--bg)] transition-transform active:scale-[0.97] disabled:opacity-60"
           >
-            <Check size={15} weight="bold" /> Finish
+            <Check size={15} weight="bold" /> {finishing ? "Finishing…" : "Finish"}
           </button>
         )}
       </header>

@@ -7,6 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // One document access. Existence is the proof, because a follow document
+    // only ever exists once the request behind it has been accepted.
+    function followsAuthor(readerId, authorId) {
+      return exists(/databases/$(database)/documents/follows/$(readerId + "__" + authorId));
+    }
+
     // Exercise catalog: readable by any signed-in user; seeded once client-side
     // (re-seeds may update existing docs when the catalog version bumps)
     match /exercises/{exerciseId} {
@@ -40,6 +46,110 @@ service cloud.firestore {
     // house split, so this is the only place one lives.
     match /users/{uid}/routines/{routineId} {
       allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- Social ----------
+    //
+    // Following is one-directional and revocable, and a shared summary only
+    // ever reaches the people this account follows. Firestore rules are the
+    // only thing standing between a summary and a stranger, because any client
+    // can be modified, so every read below is written to be safe on its own
+    // rather than relying on the query that happens to be running.
+
+    // Read code: a signed-in user can see which name a code belongs to, and
+    // only ever the uid and the display name. There is nothing else on it.
+    match /handles/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      // Renaming keeps the code pointed at the same person.
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // A follow that exists is a follow that was accepted. Nothing needs reading
+    // out of it to prove that, which matters: a rules check may make at most 10
+    // document access calls per request, and a feed query arrives with dozens of
+    // rows to check. A separate collection per state is what keeps that at one
+    // call per row instead of two.
+    match /follows/{followerId} {
+      allow read: if signedIn()
+        && (followerId == request.auth.uid
+          || resource.data.followeeUid == request.auth.uid);
+
+      // Only the person being followed can create a follow, and only in answer
+      // to a request they were actually sent. Nobody follows themselves, and
+      // nobody grants a follow on somebody else's behalf.
+      allow create: if signedIn()
+        && request.resource.data.followeeUid == request.auth.uid
+        && request.resource.data.followerUid != request.auth.uid
+        && exists(/databases/$(database)/documents/requests/$(request.resource.data.followerUid + "__" + request.auth.uid));
+
+      // Nothing about an established follow is editable. Unfollowing is a delete.
+      allow update: if false;
+
+      // Leaving is the follower's own call.
+      allow delete: if signedIn() && followerId == request.auth.uid;
+    }
+
+    // A request is an ask, not a follow. It carries no access of its own.
+    match /requests/{followerId} {
+      allow read: if signedIn()
+        && (followerId == request.auth.uid || resource.data.followeeUid == request.auth.uid);
+
+      // Anyone may ask to follow, but only as themselves, and never themselves.
+      allow create: if signedIn()
+        && request.resource.data.followerUid == request.auth.uid
+        && request.resource.data.followeeUid != request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             "followerUid", "followeeUid", "followerName", "followeeName", "createdAt"
+           ]);
+
+      allow update: if false;
+
+      // Withdrawing is the follower's own call. Declining is the followee's.
+      allow delete: if signedIn()
+        && (followerId == request.auth.uid || resource.data.followeeUid == request.auth.uid);
+    }
+
+    // Feed posts. A post is a summary and nothing else: the session name, the
+    // set count, the volume and the date. No exercise, no weight, no rep count
+    // is ever written here, and the create rule will not accept a document
+    // carrying one. That is the guarantee the privacy choice rests on.
+    //
+    // On top of that, a summary is readable only by its author and by accounts
+    // that follow the author and were accepted. A query that asks for a post
+    // the reader may not see gets that one document dropped rather than an
+    // error, so the check costs one exists() per row and cannot be sidestepped
+    // by editing the client.
+    match /posts/{postId} {
+      allow read: if signedIn()
+        && (resource.data.authorUid == request.auth.uid
+          || followsAuthor(request.auth.uid, resource.data.authorUid));
+
+      allow create: if signedIn()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             "authorUid", "authorName", "workoutName",
+             "sets", "volumeKg", "date", "createdAt", "reactions"
+           ])
+        && request.resource.data.reactions.size() == 0
+        && request.resource.data.sets is int
+        && request.resource.data.sets >= 0
+        && request.resource.data.volumeKg is number
+        && request.resource.data.volumeKg >= 0;
+
+      // Reactions are the only field any reader may change, and only on a post
+      // they can already read. Nobody can rewrite another athlete's numbers,
+      // their name, or the date.
+      allow update: if signedIn()
+        && resource.data.authorUid != request.auth.uid
+        && followsAuthor(request.auth.uid, resource.data.authorUid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"]);
+
+      // Taking a summary back down is the author's own call.
+      allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
     }
 
     // Workouts: owner-scoped

@@ -88,6 +88,80 @@ and a bro split are all common, and which one somebody runs changes over time,
 so the athlete names their own days and order. `Today` offers the routines whose
 `days` include today, plus any with no days set.
 
+### `handles/{code}`
+
+A short public code per account, and the only way one account can find
+another.
+
+| Field   | Type   | Description                          |
+| ------- | ------ | ------------------------------------ |
+| `uid`   | string | owner (Firebase Auth)                |
+| `name`  | string | display name, kept in step with the profile |
+
+The code is the document id, so two accounts can never end up with the same
+one. It is six characters from an alphabet with no I, O, 0 or 1, because it
+gets read aloud across a gym floor. The document holds nothing else: a read
+resolves a code to a uid and a name, never to an email address.
+
+### `requests/{followerUid}__{followeeUid}`
+
+One ask to follow. Nothing is shared until it is answered.
+
+| Field          | Type   | Description                     |
+| -------------- | ------ | ------------------------------- |
+| `followerUid`  | string | who is asking                   |
+| `followeeUid`  | string | who is being asked               |
+| `followerName` | string | name at the time of the ask     |
+| `followeeName` | string | name of the person being asked  |
+| `createdAt`    | number | epoch ms, newest request first   |
+
+### `follows/{followerUid}__{followeeUid}`
+
+One accepted, one-directional follow.
+
+| Field          | Type   | Description                     |
+| -------------- | ------ | ------------------------------- |
+| `followerUid`  | string | who follows                     |
+| `followeeUid`  | string | who is followed                 |
+| `followerName` | string | name at the time of the request |
+| `followeeName` | string | name of the person followed     |
+| `acceptedAt`   | number | epoch ms the request was answered |
+
+A request and a follow live in separate collections on purpose. Accepting is
+one batch that writes the follow and deletes the request, so a half-accepted
+follow is not a state the database can be in. Splitting them also means a
+rules check costs one `exists()` rather than an `exists()` plus a `get()`:
+Firestore allows at most 10 document access calls per request, and a feed
+query arrives with dozens of rows to check.
+
+### `posts/{postId}`
+
+One finished session, as a summary. This is the only part of a workout that
+ever leaves the account.
+
+| Field         | Type              | Description                              |
+| ------------- | ----------------- | ---------------------------------------- |
+| `authorUid`   | string            | whose session this is                    |
+| `authorName`  | string            | display name at the time of posting      |
+| `workoutName` | string            | e.g. "Push Day"                          |
+| `sets`        | number            | how many sets were logged                |
+| `volumeKg`    | number            | total kg across those sets               |
+| `date`        | string            | `YYYY-MM-DD`                             |
+| `createdAt`   | number            | epoch ms, the feed order                  |
+| `reactions`   | map<string, uid[]> | reaction key to the uids who gave it    |
+
+No exercise name, no weight, no rep count is ever written here, and the create
+rule will not accept a document carrying one. `hasOnly([...])` on the create
+rule is what makes that a guarantee rather than a promise.
+
+The feed is one query over this collection, narrowed to `authorUid in [...]`,
+and the rules narrow it again: a post is readable by its author and by
+accounts that follow the author, so a query that asks for more than the reader
+is entitled to gets those documents dropped rather than an error. Reactions
+are the only field any reader may write, enforced with
+`diff().affectedKeys().hasOnly(["reactions"])`, so no client can rewrite
+another athlete's numbers.
+
 ### `workouts`
 
 One document per workout session.
@@ -134,7 +208,14 @@ Housekeeping documents.
 own profile document, workouts and sets; `exercises` is readable by all
 signed-in users.
 
+The social rules are written to be safe on their own rather than relying on the
+query that happens to be running, because any client can be modified. A follow
+or a request is readable only by the two people on it, `handles` holds nothing
+but a uid and a name, and a post is readable only by its author and its
+followers.
+
 ## Indexes
 
-`firestore.indexes.json` defines composite indexes for user-scoped workout
-queries. Deploy with `firebase deploy --only firestore`.
+`firestore.indexes.json` defines composite indexes for the user-scoped workout
+queries and for the feed, which orders posts across many authors. Deploy with
+`firebase deploy --only firestore`.

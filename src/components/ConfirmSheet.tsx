@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Warning } from "@phosphor-icons/react";
+import { Warning, Info } from "@phosphor-icons/react";
 
 interface Props {
   open: boolean;
@@ -8,6 +8,10 @@ interface Props {
   /** Say exactly what is about to happen and what cannot be undone. */
   body: string;
   confirmLabel: string;
+  /** Names the way out, so it does not read "Keep it" on an unfollow. */
+  cancelLabel?: string;
+  /** Unfollowing loses nothing, so it must not be dressed as a deletion. */
+  tone?: "danger" | "neutral";
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -23,11 +27,14 @@ export default function ConfirmSheet({
   title,
   body,
   confirmLabel,
+  cancelLabel = "Keep it",
+  tone = "danger",
   busy = false,
   onConfirm,
   onCancel,
 }: Props) {
   const reduce = useReducedMotion();
+  const Icon = tone === "danger" ? Warning : Info;
 
   useEffect(() => {
     if (!open) return;
@@ -69,9 +76,12 @@ export default function ConfirmSheet({
             <div className="flex items-start gap-3">
               <span
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                style={{ background: "var(--fill)", color: "var(--danger)" }}
+                style={{
+                  background: "var(--fill)",
+                  color: tone === "danger" ? "var(--danger)" : "var(--ink-2)",
+                }}
               >
-                <Warning size={18} weight="fill" />
+                <Icon size={18} weight="fill" />
               </span>
               <div className="min-w-0">
                 <h2 id="confirm-title" className="text-[17px] font-bold tracking-[-0.01em]">
@@ -85,13 +95,17 @@ export default function ConfirmSheet({
 
             <div className="mt-5 flex gap-2">
               <button onClick={onCancel} className="btn-line flex-1" disabled={busy}>
-                Keep it
+                {cancelLabel}
               </button>
               <button
                 onClick={onConfirm}
                 disabled={busy}
                 className="btn-solid flex-1"
-                style={{ background: "var(--danger)", color: "var(--bg)" }}
+                style={
+                  tone === "danger"
+                    ? { background: "var(--danger)", color: "var(--bg)" }
+                    : { background: "var(--ink)", color: "var(--bg)" }
+                }
               >
                 {busy ? "Working…" : confirmLabel}
               </button>

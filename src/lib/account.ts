@@ -10,6 +10,7 @@ import { collection, deleteDoc, getDocs, query, where } from "firebase/firestore
 import { auth, db } from "./firebase";
 import { deleteProfile } from "./profile";
 import { deleteAllRoutines } from "./routines";
+import { deleteAllEdges, deleteHandle, deleteOwnPosts } from "./social";
 
 /** How this account signs in. Decides which controls make sense. */
 export type AuthMethod = "password" | "google";
@@ -73,8 +74,14 @@ export async function deleteAccount() {
 
   // Best effort: a leftover preferences doc is inert once the account is gone,
   // and losing the whole delete over it would be the worse outcome.
-  // Routines go with the profile, or deleting the account strands them
+  // Routines go with the profile, or deleting the account strands them. The
+  // social graph goes too, in both directions, or other people are left
+  // following a code that resolves to nobody. Their own summaries come down
+  // with the account rather than outliving it.
   await deleteAllRoutines(user.uid).catch(() => undefined);
+  await deleteAllEdges(user.uid).catch(() => undefined);
+  await deleteOwnPosts(user.uid).catch(() => undefined);
+  await deleteHandle(user.uid).catch(() => undefined);
   await deleteProfile(user.uid).catch(() => undefined);
   await deleteUser(user);
 }

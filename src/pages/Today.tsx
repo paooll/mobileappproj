@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { loadRoutines, routinesForDay, type Routine } from "../lib/routines";
-import { Play, CaretRight, ChartLine, Brain as BrainIcon } from "@phosphor-icons/react";
+import { Play, CaretRight, ChartLine, Brain as BrainIcon, UsersThree } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import {
   subscribeActiveWorkout,
@@ -419,6 +419,12 @@ export default function Today({ profile }: { profile: UserProfile }) {
             title="Training brain"
             body="Ask why a lift has stalled"
             onClick={() => navigate("/app/brain")}
+          />
+          <LinkRow
+            icon={<UsersThree size={16} />}
+            title="Feed"
+            body="Sessions from the people you follow"
+            onClick={() => navigate("/app/feed")}
           />
         </div>
       )}

@@ -8,6 +8,7 @@ import Onboarding from "./pages/Onboarding";
 import Today from "./pages/Today";
 import ActiveWorkout from "./pages/ActiveWorkout";
 import History from "./pages/History";
+import Feed from "./pages/Feed";
 import Progress from "./pages/Progress";
 import Brain from "./pages/Brain";
 import Exercises from "./pages/Exercises";
@@ -161,6 +162,14 @@ export default function App() {
         element={
           <RequireAuth>
             {(profile) => <Brain profile={profile} />}
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/app/feed"
+        element={
+          <RequireAuth>
+            {(profile) => <Feed profile={profile} />}
           </RequireAuth>
         }
       />

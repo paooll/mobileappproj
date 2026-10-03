@@ -1,0 +1,500 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Check, Copy, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import ThemeToggle from "../components/ThemeToggle";
+import ConfirmSheet from "../components/ConfirmSheet";
+import ReactionRow from "../components/ReactionRow";
+import { useToast } from "../components/Toast";
+import { useAuthUser } from "../hooks/useAuthUser";
+import {
+  REACTIONS,
+  acceptFollow,
+  authorNameOf,
+  countReaction,
+  declineFollow,
+  findByHandle,
+  gaveReaction,
+  postVolume,
+  requestFollow,
+  subscribeFeed,
+  subscribeFollowing,
+  subscribeRequestsForMe,
+  subscribeRequestsSent,
+  syncHandle,
+  toggleReaction,
+  unfollow,
+  type FeedPost,
+  type Follow,
+  type FollowRequest,
+  type ReactionKey,
+} from "../lib/social";
+import { useUnit } from "../lib/units";
+import { friendlyDate } from "../lib/progress";
+import type { UserProfile } from "../lib/profile";
+
+/** Requests waiting to be answered, highest first so the newest is in reach. */
+function Requests({
+  rows,
+  busyId,
+  onAccept,
+  onDecline,
+}: {
+  rows: FollowRequest[];
+  busyId: string | null;
+  onAccept: (row: FollowRequest) => void;
+  onDecline: (row: FollowRequest) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h2 className="label mt-10 mb-3">Wants to follow you</h2>
+      <div className="panel divide-y divide-[var(--line)]">
+        {rows.map((r) => (
+          <div key={r.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-medium">{r.followerName}</p>
+              <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
+                Sees the name, sets and volume of what you finish.
+              </p>
+            </div>
+            <button
+              onClick={() => onDecline(r)}
+              disabled={busyId === r.id}
+              aria-label={`Ignore ${r.followerName}`}
+              className="icon-btn h-11 w-11 shrink-0 text-[var(--ink-3)]"
+            >
+              <X size={17} />
+            </button>
+            <button
+              onClick={() => onAccept(r)}
+              disabled={busyId === r.id}
+              className="btn-quiet min-h-[44px] shrink-0 gap-1.5"
+            >
+              <Check size={15} weight="bold" />
+              {busyId === r.id ? "…" : "Accept"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** The code that lets somebody find this account, and the field that takes theirs. */
+function FindPeople({
+  code,
+  uid,
+  myName,
+  onRequested,
+}: {
+  code: string | null;
+  uid: string;
+  myName: string;
+  onRequested: (name: string) => void;
+}) {
+  const { toast } = useToast();
+  const [entry, setEntry] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access is refused in plenty of ordinary places. The code is
+      // on screen and selectable, so saying so beats a button that does nothing.
+      toast(`Your code is ${code}. Copy it from here.`, "info");
+    }
+  };
+
+  const send = async () => {
+    const typed = entry.trim().toUpperCase();
+    if (busy) return;
+    if (typed.length !== 6) {
+      toast("A code is six characters.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const hit = await findByHandle(typed);
+      if (!hit) {
+        toast("No account with that code. Check it and try again.", "error");
+        return;
+      }
+      if (hit.uid === uid) {
+        toast("That is your own code.", "error");
+        return;
+      }
+      await requestFollow(uid, myName, hit);
+      toast(`Request sent to ${hit.name}.`, "success");
+      setEntry("");
+      onRequested(hit.name);
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't send that request. Try again.", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <h2 className="label mt-10 mb-3">Find people</h2>
+      <div className="panel p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[14px] text-[var(--ink-2)]">Your code</span>
+          <span className="num text-[17px] font-bold tracking-[0.14em]">{code ?? "…"}</span>
+        </div>
+        <p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-3)]">
+          Read it out to somebody at the rack. It only ever shows your name.
+        </p>
+        <button onClick={copy} disabled={!code} className="btn-line mt-3 w-full gap-2">
+          {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
+          {copied ? "Copied" : "Copy code"}
+        </button>
+
+        <div className="mt-4 border-t border-[var(--line)] pt-4">
+          <label htmlFor="feed-code" className="text-[14px] text-[var(--ink-2)]">
+            Their code
+          </label>
+          <div className="mt-2 flex gap-2">
+            <input
+              id="feed-code"
+              className="field num flex-1 tracking-[0.14em] uppercase"
+              value={entry}
+              onChange={(e) => setEntry(e.target.value.toUpperCase().slice(0, 6))}
+              placeholder="ABC123"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              maxLength={6}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") send();
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={busy || entry.length !== 6}
+              className="btn-quiet min-h-[44px] shrink-0 gap-1.5"
+            >
+              <UserPlus size={15} />
+              {busy ? "…" : "Ask"}
+            </button>
+          </div>
+          <p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-3)]">
+            Nothing reaches their feed until they say yes.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** One shared session. The summary is all there is, by design. */
+function PostRow({
+  post,
+  uid,
+  onReact,
+}: {
+  post: FeedPost;
+  uid: string;
+  onReact: (post: FeedPost, key: ReactionKey) => void;
+}) {
+  const [unit] = useUnit();
+  const counts = useMemo(() => {
+    const out = {} as Record<ReactionKey, number>;
+    for (const r of REACTIONS) out[r.key] = countReaction(post, r.key);
+    return out;
+  }, [post]);
+  const mine = useMemo(() => {
+    const out = {} as Record<ReactionKey, boolean>;
+    for (const r of REACTIONS) out[r.key] = gaveReaction(post, uid, r.key);
+    return out;
+  }, [post, uid]);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <article className="px-4 py-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em]">
+          {post.authorName}
+        </h3>
+        <span className="label shrink-0 normal-case">{friendlyDate(post.date)}</span>
+      </div>
+      <p className="mt-1 text-[17px] font-bold leading-tight tracking-[-0.02em]">
+        {post.workoutName}
+      </p>
+      <p className="num mt-1 text-[13px] text-[var(--ink-2)]">
+        {post.sets} {post.sets === 1 ? "set" : "sets"}
+        <span className="px-1.5 text-[var(--ink-3)]">·</span>
+        {postVolume(post, unit)}
+      </p>
+      <div className="mt-3">
+        <ReactionRow
+          counts={counts}
+          mine={mine}
+          busy={busy}
+          onReact={async (key) => {
+            if (busy) return;
+            setBusy(true);
+            try {
+              await onReact(post, key);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      </div>
+    </article>
+  );
+}
+
+export default function Feed({ profile }: { profile: UserProfile }) {
+  const user = useAuthUser();
+  const { toast } = useToast();
+  const reduce = useReducedMotion();
+  const uid = user?.uid ?? "";
+  const myName = authorNameOf(profile.displayName);
+
+  const [requests, setRequests] = useState<FollowRequest[]>([]);
+  const [requestsSent, setRequestsSent] = useState<FollowRequest[]>([]);
+  const [following, setFollowing] = useState<Follow[] | null>(null);
+  const [posts, setPosts] = useState<FeedPost[] | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<Follow | null>(null);
+  const [leavingBusy, setLeavingBusy] = useState(false);
+  // Names asked for in this session. Firestore will echo them back in a beat,
+  // but until it does the list would silently not change and the button reads
+  // as broken rather than as sent.
+  const [asked, setAsked] = useState<string[]>([]);
+
+  const rise = reduce
+    ? {}
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] as const },
+      };
+
+  useEffect(() => {
+    if (!user) return;
+    syncHandle(user.uid, profile.displayName).then(setCode).catch((err) => {
+      console.error(err);
+      setCode(null);
+    });
+  }, [user, profile.displayName]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeRequestsForMe(user.uid, setRequests);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeRequestsSent(user.uid, setRequestsSent);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeFollowing(user.uid, setFollowing);
+  }, [user]);
+
+  // The feed cannot be asked for until the follow list has arrived, otherwise
+  // the first query would run against nobody and show an empty page for good.
+  const followeeKey = (following ?? []).map((f) => f.followeeUid).join(",");
+  useEffect(() => {
+    if (!user || following === null) return;
+    const ids = followeeKey ? followeeKey.split(",") : [];
+    return subscribeFeed(user.uid, ids, setPosts);
+  }, [user, following, followeeKey]);
+
+  const answer = async (row: FollowRequest, accept: boolean) => {
+    if (busyId) return;
+    setBusyId(row.id);
+    try {
+      if (accept) {
+        await acceptFollow(row);
+        toast(`${row.followerName} can see your sessions now.`, "success");
+      } else {
+        await declineFollow(row.id);
+      }
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't answer that request. Try again.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const react = useCallback(
+    async (post: FeedPost, key: ReactionKey) => {
+      // Applied before the write so the mark lands under the finger. The
+      // snapshot puts it right either way.
+      setPosts((prev) =>
+        prev
+          ? prev.map((p) =>
+              p.id === post.id
+                ? {
+                    ...p,
+                    reactions: {
+                      ...p.reactions,
+                      [key]: (p.reactions?.[key] ?? []).includes(uid)
+                        ? (p.reactions[key] ?? []).filter((u) => u !== uid)
+                        : [...(p.reactions?.[key] ?? []), uid],
+                    },
+                  }
+                : p
+            )
+          : prev
+      );
+      try {
+        await toggleReaction(post.id, uid, key);
+      } catch (err) {
+        console.error(err);
+        // Nothing arrives on a failed write, so the optimistic mark would sit
+        // there claiming something the database never recorded.
+        setPosts((prev) =>
+          prev ? prev.map((p) => (p.id === post.id ? post : p)) : prev
+        );
+        toast("Couldn't save that. Try again.", "error");
+      }
+    },
+    [uid, toast]
+  );
+
+  const confirmLeave = async () => {
+    if (!leaving || leavingBusy) return;
+    setLeavingBusy(true);
+    try {
+      await unfollow(leaving.id);
+      toast(`You stopped following ${leaving.followeeName}.`, "info");
+      setLeaving(null);
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't leave that follow. Try again.", "error");
+    } finally {
+      setLeavingBusy(false);
+    }
+  };
+
+  const follows = following ?? [];
+  const followNames = new Set(follows.map((f) => f.followeeName));
+  // An ask stops being pending the moment it is accepted or declined, so a name
+  // from this session is only still waiting if Firestore has not moved it into
+  // either list yet. Without that check it would sit there saying "waiting"
+  // after the very request it referred to had been answered.
+  const askedNames = new Set<string>([
+    ...requestsSent.map((r) => r.followeeName),
+    ...asked.filter((n) => !followNames.has(n)),
+  ]);
+  const loading = following === null || posts === null;
+
+  return (
+    <div className="px-5 pt-[max(env(safe-area-inset-top),48px)]">
+      <div className="flex items-start justify-between">
+        <motion.h1 {...rise} className="text-[30px] font-bold tracking-[-0.02em]">
+          Feed
+        </motion.h1>
+        <ThemeToggle />
+      </div>
+      <p className="mt-1 text-[14px] text-[var(--ink-2)]">
+        {follows.length === 0
+          ? "Sessions from the people you follow."
+          : `Following ${follows.length} ${follows.length === 1 ? "person" : "people"}.`}
+      </p>
+
+      <Requests
+        rows={requests}
+        busyId={busyId}
+        onAccept={(r) => answer(r, true)}
+        onDecline={(r) => answer(r, false)}
+      />
+
+      {loading ? (
+        <div className="mt-8 flex flex-col gap-2" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-[132px] animate-pulse rounded-[14px] bg-[var(--fill)]" />
+          ))}
+        </div>
+      ) : posts.length === 0 ? (
+        <div className="panel mt-8 flex flex-col items-center px-6 py-11 text-center">
+          <UsersThree size={30} className="text-[var(--ink-3)]" />
+          <p className="mt-3 text-[16px] font-semibold tracking-[-0.01em]">
+            {follows.length === 0 ? "Nobody here yet" : "Nothing logged yet"}
+          </p>
+          <p className="mt-2 max-w-[30ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+            {follows.length === 0
+              ? "Ask somebody for their code with the box below. Once they say yes, every session they finish shows up here."
+              : "When the people you follow finish a session, the name, the sets and the volume turn up here."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <h2 className="label mt-10 mb-3">Recent sessions</h2>
+          <div className="panel divide-y divide-[var(--line)]">
+            {posts.map((p) => (
+              <PostRow key={p.id} post={p} uid={uid} onReact={react} />
+            ))}
+          </div>
+        </>
+      )}
+
+      <FindPeople
+        code={code}
+        uid={uid}
+        myName={myName}
+        onRequested={(name) => setAsked((prev) => (prev.includes(name) ? prev : [...prev, name]))}
+      />
+
+      {(follows.length > 0 || askedNames.size > 0) && (
+        <>
+          <h2 className="label mt-10 mb-3">Following</h2>
+          <div className="panel divide-y divide-[var(--line)]">
+            {follows.map((f) => (
+              <div key={f.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium">{f.followeeName}</p>
+                </div>
+                <button
+                  onClick={() => setLeaving(f)}
+                  className="btn-quiet min-h-[44px] shrink-0"
+                >
+                  Unfollow
+                </button>
+              </div>
+            ))}
+            {askedNames.size > 0 && (
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium">
+                    {[...askedNames].join(", ")}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
+                    Waiting for them to say yes
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <ConfirmSheet
+        open={leaving !== null}
+        title={`Stop following ${leaving?.followeeName ?? "this person"}?`}
+        body="Their sessions leave your feed. They keep following you, and you can ask again whenever you like."
+        confirmLabel="Unfollow"
+        cancelLabel="Stay following"
+        tone="neutral"
+        busy={leavingBusy}
+        onConfirm={confirmLeave}
+        onCancel={() => setLeaving(null)}
+      />
+    </div>
+  );
+}

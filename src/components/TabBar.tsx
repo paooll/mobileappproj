@@ -4,11 +4,13 @@ import {
   ClockCounterClockwise,
   Archive,
   User,
+  UsersThree,
 } from "@phosphor-icons/react";
 
 const tabs = [
   { to: "/app", label: "Today", icon: Barbell, end: true },
   { to: "/app/history", label: "History", icon: ClockCounterClockwise, end: false },
+  { to: "/app/feed", label: "Feed", icon: UsersThree, end: false },
   { to: "/app/exercises", label: "Library", icon: Archive, end: false },
   { to: "/app/profile", label: "Profile", icon: User, end: false },
 ];

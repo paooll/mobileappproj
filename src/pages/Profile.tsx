@@ -62,6 +62,7 @@ import {
 import { loadAvatar, removeAvatar, uploadAvatar } from "../lib/avatar";
 import { friendlyDate } from "../lib/progress";
 import RoutinesSection from "../components/RoutinesSection";
+import SharedPosts from "../components/SharedPosts";
 
 const UNIT_OPTIONS: Unit[] = ["kg", "lb"];
 
@@ -736,6 +737,8 @@ export default function Profile({ profile }: { profile: UserProfile }) {
           </AnimatePresence>
         </div>
       </Section>
+
+      {user && <SharedPosts uid={user.uid} />}
 
       <Section title="Account & security">
         <div className="flex flex-col gap-2">
