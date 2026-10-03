@@ -22,8 +22,14 @@ export const RANKS = [
 export interface RankedLift {
   /** Canonical label shown in the UI. */
   name: string;
-  /** Patterns matched case-insensitively against the real catalog names. */
-  match: RegExp[];
+  /**
+   * Exact exercise names as they exist in free-exercise-db, the dataset this
+   * app seeds its catalog from. Matching on the real strings rather than a
+   * pattern is deliberate: there is no exercise called "Bench Press" or "Squat"
+   * in that dataset, they are "Barbell Bench Press - Medium Grip" and
+   * "Barbell Squat", so a loose pattern would silently rank almost nobody.
+   */
+  names: string[];
   /** Estimated 1RM in kg needed for each rank, ascending. Same length as RANKS. */
   thresholds: number[];
 }
@@ -36,24 +42,115 @@ export interface RankedLift {
  * bench and a deadlift all mean the same thing when they move, so they share one
  * ladder and only the thresholds differ.
  *
- * Calibrated against common intermediate and advanced strength standards. They
- * are a starting point rather than a verdict, and the file is meant to be edited.
+ * Variations of the same barbell lift are listed together, so a wide-stance
+ * squat still counts towards the squat. Pull-ups and dips are left out on
+ * purpose: they are bodyweight movements, so a kilogram ladder would be
+ * measuring the person, not the lift.
+ *
+ * Thresholds are calibrated against common intermediate and advanced strength
+ * standards. They are a starting point rather than a verdict, and this file is
+ * meant to be edited.
  */
 export const RANKED_LIFTS: RankedLift[] = [
-  { name: "Deadlift", match: [/^deadlift$/i], thresholds: [80, 120, 160, 190, 220, 250, 280, 320] },
-  { name: "Squat", match: [/^back squat$/i, /^squat$/i], thresholds: [60, 100, 140, 170, 200, 225, 260, 300] },
-  { name: "Bench Press", match: [/^bench press$/i], thresholds: [50, 80, 100, 120, 140, 160, 180, 205] },
-  { name: "Front Squat", match: [/^front squat$/i], thresholds: [50, 80, 110, 140, 170, 195, 220, 250] },
-  { name: "Overhead Press", match: [/^(standing |seated )?overhead press$/i], thresholds: [30, 50, 65, 80, 92, 105, 120, 135] },
-  { name: "Bent Over Row", match: [/^bent over row$/i, /^barbell row$/i], thresholds: [40, 70, 95, 115, 135, 155, 175, 200] },
-  { name: "Romanian Deadlift", match: [/^romanian deadlift$/i], thresholds: [60, 100, 130, 160, 185, 210, 240, 270] },
-  { name: "Power Clean", match: [/^power clean$/i], thresholds: [50, 70, 90, 110, 125, 145, 165, 185] },
-  { name: "Incline Bench Press", match: [/^incline bench press$/i], thresholds: [40, 70, 95, 115, 130, 150, 170, 190] },
+  {
+    name: "Deadlift",
+    names: [
+      "Barbell Deadlift",
+      "Deficit Deadlift",
+      "Sumo Deadlift",
+      "Sumo Deadlift with Chains",
+      "Rickshaw Deadlift",
+      "Trap Bar Deadlift",
+    ],
+    thresholds: [80, 120, 160, 190, 220, 250, 280, 320],
+  },
+  {
+    name: "Squat",
+    names: [
+      "Barbell Squat",
+      "Barbell Full Squat",
+      "Wide Stance Barbell Squat",
+      "Narrow Stance Squats",
+      "Barbell Squat To A Bench",
+    ],
+    thresholds: [60, 100, 140, 170, 200, 225, 260, 300],
+  },
+  {
+    name: "Bench Press",
+    names: [
+      "Barbell Bench Press - Medium Grip",
+      "Bench Press - Powerlifting",
+      "Wide-Grip Barbell Bench Press",
+      "Close-Grip Barbell Bench Press",
+    ],
+    thresholds: [50, 80, 100, 120, 140, 160, 180, 205],
+  },
+  {
+    name: "Front Squat",
+    names: ["Front Barbell Squat", "Front Squat (Clean Grip)"],
+    thresholds: [50, 80, 110, 140, 170, 195, 220, 250],
+  },
+  {
+    name: "Overhead Press",
+    names: [
+      "Barbell Shoulder Press",
+      "Standing Military Press",
+      "Seated Barbell Military Press",
+      "Standing Barbell Press Behind Neck",
+      "Smith Machine Overhead Shoulder Press",
+    ],
+    thresholds: [30, 50, 65, 80, 92, 105, 120, 135],
+  },
+  {
+    name: "Bent Over Row",
+    names: [
+      "Bent Over Barbell Row",
+      "Bent Over Two-Arm Long Bar Row",
+      "Bent Over One-Arm Long Bar Row",
+    ],
+    thresholds: [40, 70, 95, 115, 135, 155, 175, 200],
+  },
+  {
+    name: "Romanian Deadlift",
+    names: [
+      "Romanian Deadlift",
+      "Romanian Deadlift from Deficit",
+      "Stiff-Legged Barbell Deadlift",
+      "Smith Machine Stiff-Legged Deadlift",
+    ],
+    thresholds: [60, 100, 130, 160, 185, 210, 240, 270],
+  },
+  {
+    name: "Power Clean",
+    names: ["Power Clean", "Power Clean from Blocks", "Smith Machine Hang Power Clean"],
+    thresholds: [50, 70, 90, 110, 125, 145, 165, 185],
+  },
+  {
+    name: "Incline Bench Press",
+    names: [
+      "Barbell Incline Bench Press - Medium Grip",
+      "Smith Machine Incline Bench Press",
+      "Leverage Incline Chest Press",
+    ],
+    thresholds: [40, 70, 95, 115, 130, 150, 170, 190],
+  },
 ];
+
+/** Trims and folds case and spacing, so a stray double space cannot miss. */
+function normalise(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Catalog name to canonical lift, built once. */
+const LOOKUP = new Map<string, string>();
+for (const lift of RANKED_LIFTS) {
+  for (const n of lift.names) LOOKUP.set(normalise(n), lift.name);
+}
 
 /** Which ranked lift, if any, a catalog exercise is. */
 export function rankedLiftFor(exerciseName: string): RankedLift | null {
-  return RANKED_LIFTS.find((l) => l.match.some((re) => re.test(exerciseName))) ?? null;
+  const hit = LOOKUP.get(normalise(exerciseName));
+  return hit ? (RANKED_LIFTS.find((l) => l.name === hit) ?? null) : null;
 }
 
 export interface LiftRank {
