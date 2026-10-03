@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import RankBoard from "../components/RankBoard";
 import { useNavigate } from "react-router-dom";
 import { CaretLeft, ChartLine, TrendDown, TrendUp } from "@phosphor-icons/react";
 import { loadArchive, type Workout, type WorkoutSet } from "../lib/data";
@@ -51,6 +52,11 @@ export default function Progress() {
       cancelled = true;
     };
   }, [user, toast]);
+
+  const allSets = useMemo(
+    () => Array.from(setsByWorkout.values()).flat(),
+    [setsByWorkout]
+  );
 
   const summaries = useMemo(
     () => exerciseSummaries(workouts, setsByWorkout),
@@ -117,6 +123,13 @@ export default function Progress() {
         <h1 className="text-[30px] font-bold tracking-[-0.02em]">Progress</h1>
         <ThemeToggle />
       </div>
+
+      {!loading && allSets.length > 0 && (
+        <>
+          <h2 className="label mt-8 mb-3">Ranks</h2>
+          <RankBoard sets={allSets} />
+        </>
+      )}
 
       {loading ? (
         <div className="mt-6 flex flex-col gap-3">
