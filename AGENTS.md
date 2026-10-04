@@ -6,7 +6,7 @@
 anything in this app.** Not after, not when stuck — before. Read the skill's
 `SKILL.md` first, then follow it.
 
-Fifty-three skills are installed here deliberately. Skipping them and coding
+Sixty-one skills are installed here deliberately. Skipping them and coding
 from instinct is how this project ends up with off-brand UI, ad-hoc motion and
 inconsistent tokens.
 
@@ -24,6 +24,11 @@ If a task matches no skill, say so rather than pretending one applied.
 | Copy/layout/styling that must not look templated | `taste-skill` |
 | Token architecture, component specs | `design-system` |
 | Tailwind + shadcn utility and theming work | `ui-styling` |
+
+`ponytail` pushes toward fewer files, fewer dependencies and deletion over
+addition. That is a deliberate second opinion, not an override: the house rules
+below win. Never let it justify dropping a state cycle, a 44px touch target, an
+a11y label, a Firestore rule, or an error path. It already says so itself.
 
 ### Motion and interaction
 
@@ -43,6 +48,10 @@ If a task matches no skill, say so rather than pretending one applied.
 | Before claiming something works | `verification-before-completion` |
 | Reviewing or receiving review | `requesting-code-review`, `receiving-code-review` |
 | Engineering process at scale | `ecc` (293 skills, 68 agents — read its SKILL.md first) |
+| Simplest solution that works, YAGNI, dependency or abstraction restraint | `ponytail` (`lite` / `full` / `ultra`) |
+| Review or audit a diff or repo for over-engineering | `ponytail-review` (diff), `ponytail-audit` (whole repo) |
+| List the shortcuts this codebase deliberately deferred | `ponytail-debt` |
+| What `ponytail` is and how to switch levels | `ponytail-help`, `ponytail-gain` (impact scoreboard) |
 
 ### Ignore these
 
@@ -77,7 +86,7 @@ the weekly digest runs on GitHub Actions. Do not propose either service.
 
 ```
 bun tsc -b --noEmit     # must exit 0
-bun run lint src        # baseline is 8 warnings, 0 errors
+bun run lint src        # baseline is 7 warnings, 0 errors
 npm run build           # must exit 0
 ```
 
