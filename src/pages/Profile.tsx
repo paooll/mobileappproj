@@ -529,6 +529,10 @@ export default function Profile({ profile }: { profile: UserProfile }) {
         )}
       </div>
 
+      <h2 className="mt-12 mb-3 text-[13px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+        Training
+      </h2>
+
       {/* What they told us at setup */}
       <Section title="Your setup">
         <div className="panel divide-y divide-[var(--line)]">
@@ -686,6 +690,73 @@ export default function Profile({ profile }: { profile: UserProfile }) {
         </div>
       </Section>
 
+      <h2 className="mt-12 mb-3 text-[13px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+        Sharing and reminders
+      </h2>
+
+      {/* Their own split, not a house one */}
+      <Section title="Your split">
+        {user && <RoutinesSection uid={user.uid} equipment={profile.equipment} />}
+      </Section>
+
+      {/* Personal records */}
+      <Section title="Personal records">
+        <button
+          onClick={() => navigate("/app/progress")}
+          className="btn-line mb-3 w-full"
+          disabled={loading}
+        >
+          <ChartLine size={16} /> See progress
+        </button>
+        {loading ? (
+          <div className="panel flex flex-col gap-2 p-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-8 animate-pulse rounded-lg bg-[var(--fill)]" />
+            ))}
+          </div>
+        ) : archiveError ? (
+          <div className="panel flex flex-col items-center gap-3 px-6 py-9 text-center">
+            <p className="text-[15px] font-medium">Records didn't load</p>
+            <p className="max-w-[28ch] text-[13px] text-[var(--ink-2)]">
+              Check your connection and try again.
+            </p>
+            <button onClick={retryArchive} disabled={!user} className="btn-line">
+              Try again
+            </button>
+          </div>
+        ) : records.length === 0 ? (
+          <div className="panel flex flex-col items-center px-6 py-10 text-center">
+            <Trophy size={22} className="text-[var(--ink-3)]" />
+            <p className="mt-3 max-w-[26ch] text-[15px] text-[var(--ink-2)]">
+              Log a weighted set and your heaviest lifts will show up here.
+            </p>
+          </div>
+        ) : (
+          <div className="panel divide-y divide-[var(--line)]">
+            {records.map((r) => (
+              <div key={r.exerciseName} className="flex items-center justify-between px-4 py-3.5">
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-medium">{r.exerciseName}</p>
+                  <p className="label mt-0.5 normal-case">
+                    {friendlyDate(r.date)}
+                    <span className="mx-1.5 inline-flex items-center gap-0.5 align-middle">
+                      <Check size={10} weight="bold" />
+                      {r.reps} reps
+                    </span>
+                  </p>
+                </div>
+                <span className="num shrink-0 text-[15px] font-semibold">
+                  {toDisplay(r.weight, unit)}
+                  <span className="ml-0.5 text-[11px] font-medium text-[var(--ink-3)]">
+                    {unit}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       {/* What leaves the account when a session is shared */}
       <Section title="Sharing">
         <div className="flex flex-col gap-2">
@@ -778,6 +849,10 @@ export default function Profile({ profile }: { profile: UserProfile }) {
 
       {user && <SharedPosts uid={user.uid} />}
 
+      <h2 className="mt-12 mb-3 text-[13px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+        Account
+      </h2>
+
       <Section title="Account & security">
         <div className="flex flex-col gap-2">
           <div className="panel flex items-center justify-between gap-4 p-4">
@@ -834,69 +909,6 @@ export default function Profile({ profile }: { profile: UserProfile }) {
             </p>
           </div>
         </div>
-      </Section>
-
-      {/* Their own split, not a house one */}
-      <Section title="Your split">
-        {user && <RoutinesSection uid={user.uid} equipment={profile.equipment} />}
-      </Section>
-
-      {/* Personal records */}
-      <Section title="Personal records">
-        <button
-          onClick={() => navigate("/app/progress")}
-          className="btn-line mb-3 w-full"
-          disabled={loading}
-        >
-          <ChartLine size={16} /> See progress
-        </button>
-        {loading ? (
-          <div className="panel flex flex-col gap-2 p-4">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-8 animate-pulse rounded-lg bg-[var(--fill)]" />
-            ))}
-          </div>
-        ) : archiveError ? (
-          <div className="panel flex flex-col items-center gap-3 px-6 py-9 text-center">
-            <p className="text-[15px] font-medium">Records didn't load</p>
-            <p className="max-w-[28ch] text-[13px] text-[var(--ink-2)]">
-              Check your connection and try again.
-            </p>
-            <button onClick={retryArchive} disabled={!user} className="btn-line">
-              Try again
-            </button>
-          </div>
-        ) : records.length === 0 ? (
-          <div className="panel flex flex-col items-center px-6 py-10 text-center">
-            <Trophy size={22} className="text-[var(--ink-3)]" />
-            <p className="mt-3 max-w-[26ch] text-[15px] text-[var(--ink-2)]">
-              Log a weighted set and your heaviest lifts will show up here.
-            </p>
-          </div>
-        ) : (
-          <div className="panel divide-y divide-[var(--line)]">
-            {records.map((r) => (
-              <div key={r.exerciseName} className="flex items-center justify-between px-4 py-3.5">
-                <div className="min-w-0">
-                  <p className="truncate text-[15px] font-medium">{r.exerciseName}</p>
-                  <p className="label mt-0.5 normal-case">
-                    {friendlyDate(r.date)}
-                    <span className="mx-1.5 inline-flex items-center gap-0.5 align-middle">
-                      <Check size={10} weight="bold" />
-                      {r.reps} reps
-                    </span>
-                  </p>
-                </div>
-                <span className="num shrink-0 text-[15px] font-semibold">
-                  {toDisplay(r.weight, unit)}
-                  <span className="ml-0.5 text-[11px] font-medium text-[var(--ink-3)]">
-                    {unit}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
       </Section>
 
       <Section title="Your data">
