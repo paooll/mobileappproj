@@ -73,9 +73,12 @@ service cloud.firestore {
     // document access calls per request, and a feed query arrives with dozens of
     // rows to check. A separate collection per state is what keeps that at one
     // call per row instead of two.
-    match /follows/{followerId} {
+    match /follows/{edgeId} {
+      // The path variable is the document id, which is `follower__followee`,
+      // so it never equals a bare uid. Ownership has to be read off the
+      // document's own fields, or every read below is denied forever.
       allow read: if signedIn()
-        && (followerId == request.auth.uid
+        && (resource.data.followerUid == request.auth.uid
           || resource.data.followeeUid == request.auth.uid);
 
       // Only the person being followed can create a follow, and only in answer
@@ -89,14 +92,21 @@ service cloud.firestore {
       // Nothing about an established follow is editable. Unfollowing is a delete.
       allow update: if false;
 
-      // Leaving is the follower's own call.
-      allow delete: if signedIn() && followerId == request.auth.uid;
+      // Leaving is the follower's own call. The followee may also drop the
+      // edge, which is what lets an account leave the platform without leaving
+      // itself in somebody else's following list.
+      allow delete: if signedIn()
+        && (resource.data.followerUid == request.auth.uid
+          || resource.data.followeeUid == request.auth.uid);
     }
 
     // A request is an ask, not a follow. It carries no access of its own.
-    match /requests/{followerId} {
+    match /requests/{edgeId} {
+      // Same id shape as `follows`, so the same trap: the path variable is the
+      // document id and is never equal to a uid.
       allow read: if signedIn()
-        && (followerId == request.auth.uid || resource.data.followeeUid == request.auth.uid);
+        && (resource.data.followerUid == request.auth.uid
+          || resource.data.followeeUid == request.auth.uid);
 
       // Anyone may ask to follow, but only as themselves, and never themselves.
       allow create: if signedIn()
@@ -110,7 +120,8 @@ service cloud.firestore {
 
       // Withdrawing is the follower's own call. Declining is the followee's.
       allow delete: if signedIn()
-        && (followerId == request.auth.uid || resource.data.followeeUid == request.auth.uid);
+        && (resource.data.followerUid == request.auth.uid
+          || resource.data.followeeUid == request.auth.uid);
     }
 
     // Feed posts. A post is a summary and nothing else: the session name, the
@@ -140,12 +151,14 @@ service cloud.firestore {
         && request.resource.data.volumeKg is number
         && request.resource.data.volumeKg >= 0;
 
-      // Reactions are the only field any reader may change, and only on a post
-      // they can already read. Nobody can rewrite another athlete's numbers,
-      // their name, or the date.
+      // Reactions are the only field anyone may change, and only on a post they
+      // can already read: their own, or one from an account they follow. Nobody
+      // can rewrite another athlete's numbers, their name, or the date. Your
+      // own summary is reactable too, or the row on your own feed would sit
+      // there refusing every tap.
       allow update: if signedIn()
-        && resource.data.authorUid != request.auth.uid
-        && followsAuthor(request.auth.uid, resource.data.authorUid)
+        && (resource.data.authorUid == request.auth.uid
+          || followsAuthor(request.auth.uid, resource.data.authorUid))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"]);
 
       // Taking a summary back down is the author's own call.

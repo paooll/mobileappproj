@@ -158,7 +158,8 @@ The feed is one query over this collection, narrowed to `authorUid in [...]`,
 and the rules narrow it again: a post is readable by its author and by
 accounts that follow the author, so a query that asks for more than the reader
 is entitled to gets those documents dropped rather than an error. Reactions
-are the only field any reader may write, enforced with
+are the only field anyone may write, on your own post or one from an account
+you follow, enforced with
 `diff().affectedKeys().hasOnly(["reactions"])`, so no client can rewrite
 another athlete's numbers.
 
@@ -213,6 +214,14 @@ query that happens to be running, because any client can be modified. A follow
 or a request is readable only by the two people on it, `handles` holds nothing
 but a uid and a name, and a post is readable only by its author and its
 followers.
+
+Ownership on an edge is read off `followerUid`/`followeeUid`, never off the
+path. The document id is `{followerUid}__{followeeUid}`, so a rule that
+compared the path variable to `request.auth.uid` would compare
+`uidAlice__uidBob` with `uidAlice`, never match, and quietly deny both people
+access to their own edge. That failure is invisible: reads return empty rather
+than erroring, so the following list comes back empty and the feed collapses
+to just the reader.
 
 ## Indexes
 
