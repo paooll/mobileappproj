@@ -521,7 +521,16 @@ export function parseMentions(
   for (const c of candidates) {
     const name = c.name.trim();
     if (!name || c.uid === "") continue;
-    if (new RegExp(`(^|\\s)@${escapeRegExp(name)}(?![\\w@])`, "i").test(body)) hits.push(c.uid);
+    // `(?![\\w@])` stops `@name` matching inside a longer word, but a dot still
+    // slips past it, so `@icrn.com` would read as a mention of icrn. A dot
+    // only means an email address when a domain-looking run follows it, since
+    // a full stop is also how a sentence ends: "@icrn." is a mention, and
+    // "@icrn.com" is an address.
+    const mention = new RegExp(`(^|\\s)@${escapeRegExp(name)}(?![\\w@])`, "i");
+    const match = mention.exec(body);
+    if (!match) continue;
+    if (/^\.[A-Za-z]/.test(body.slice(match.index + match[0].length))) continue;
+    hits.push(c.uid);
   }
   return [...new Set(hits)];
 }
@@ -573,13 +582,21 @@ export async function notifyMention(
   });
 }
 
-export async function markNotificationsRead(uid: string): Promise<void> {
-  const snap = await getDocs(
-    query(collection(db, "notifications", uid, "items"), where("read", "==", false))
-  );
-  if (snap.empty) return;
+/**
+ * Clears the badge for the items the athlete has actually seen.
+ *
+ * The ids are passed in rather than queried for, because a query for "every
+ * unread thing" also catches a mention that arrived in the moment between the
+ * sheet opening and this running. That mention would be marked read without
+ * ever being looked at, and the bell would sit empty while somebody waited for
+ * a notification that had quietly been swallowed.
+ */
+export async function markNotificationsRead(uid: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
   const batch = writeBatch(db);
-  for (const d of snap.docs) batch.update(d.ref, { read: true });
+  for (const id of ids.slice(0, 400)) {
+    batch.update(doc(db, "notifications", uid, "items", id), { read: true });
+  }
   await batch.commit();
 }
 

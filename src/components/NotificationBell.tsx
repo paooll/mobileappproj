@@ -28,8 +28,14 @@ export default function NotificationBell({ uid }: { uid: string }) {
 
   const show = async () => {
     setOpen(true);
+    // Only what is already on screen is cleared. Clearing by query rather than
+    // by id would also swallow anything that arrived while the sheet was open,
+    // which is how a mention could land and be marked read without ever being
+    // seen.
+    const seen = items.map((n) => n.id);
+    if (seen.length === 0) return;
     try {
-      await markNotificationsRead(uid);
+      await markNotificationsRead(uid, seen);
     } catch (err) {
       // Nothing arrives on a failed write, so the dot would sit claiming there
       // is something unread that the list has already shown.

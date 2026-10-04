@@ -30,14 +30,20 @@ interface Props {
  */
 export default function ReactionRow({ counts, mine, notes, busy, onReact, onCheer }: Props) {
   return (
-    <div className="flex items-center gap-2">
+    // Three reactions, each paired with its own 44px pencil, plus the comment
+    // button beside them, is more than a narrow phone has to give. Rather than
+    // let the row push the comment button off the card, the reactions scroll
+    // inside their own strip and keep their full touch targets: the pencil
+    // stays a real 44px target instead of being squeezed into something that
+    // cannot be hit reliably.
+    <div className="-mx-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overscroll-x-contain px-1">
       {REACTIONS.map(({ key, label }) => {
         const Icon = ICONS[key];
         const given = mine[key];
         const count = counts[key];
         const note = notes[key];
         return (
-          <div key={key} className="flex min-w-0 items-center">
+          <div key={key} className="flex shrink-0 items-center">
             <button
               onClick={() => onReact(key)}
               disabled={busy}
@@ -47,7 +53,7 @@ export default function ReactionRow({ counts, mine, notes, busy, onReact, onChee
               aria-label={
                 note ? `${label}${given ? ", given" : ""}, ${count} so far, ${note}` : `${label}${given ? ", given" : ""}, ${count} so far`
               }
-              className="tab flex h-11 min-w-0 items-center gap-1.5 rounded-l-full px-3 text-[13px] font-semibold transition-transform active:scale-[0.94] disabled:opacity-60"
+              className="tab flex h-11 shrink-0 items-center gap-1.5 rounded-l-full px-3 text-[13px] font-semibold transition-transform active:scale-[0.94] disabled:opacity-60"
               style={
                 given
                   ? { background: "var(--ink)", color: "var(--bg)" }

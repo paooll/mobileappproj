@@ -36,6 +36,9 @@ export default function PostSheet({ post, uid, myName, mentionable, onClose }: P
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The comment landed; only the mention bell did not. Two different outcomes,
+  // so two different messages rather than one that says the send failed.
+  const [bellWarning, setBellWarning] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
 
   const open = post !== null;
@@ -58,17 +61,33 @@ export default function PostSheet({ post, uid, myName, mentionable, onClose }: P
     if (!body) return;
     setBusy(true);
     setError(null);
+    setBellWarning(false);
     try {
       const mentioned = parseMentions(body, mentionable);
       await addComment(post.id, uid, myName, body, mentioned);
       // The bell is written by this device, because there is no server to do
-      // it. One failure must not lose a comment that already landed.
-      await Promise.all(
+      // it. A comment that landed must never be lost because a bell did not,
+      // so this can only ever add to what is already saved.
+      //
+      // A failed bell used to be swallowed into the console, which meant a
+      // mention that silently never arrived looked exactly like a mention
+      // nobody had made. It is reported now, so the writer knows somebody may
+      // not have been pulled in.
+      const bellResults = await Promise.all(
         mentioned.map((toUid) =>
-          notifyMention(toUid, uid, myName, post.id, body).catch((err) => console.error(err))
+          notifyMention(toUid, uid, myName, post.id, body).then(
+            () => true,
+            (err) => {
+              console.error(err);
+              return false;
+            }
+          )
         )
       );
       setDraft("");
+      if (bellResults.some((ok) => !ok)) {
+        setBellWarning(true);
+      }
     } catch (err) {
       console.error(err);
       setError("Couldn't send that. Try again.");
@@ -186,6 +205,12 @@ export default function PostSheet({ post, uid, myName, mentionable, onClose }: P
         {error && (
           <p role="alert" className="mt-2 text-[13px]" style={{ color: "var(--danger)" }}>
             {error}
+          </p>
+        )}
+        {bellWarning && (
+          <p className="mt-2 text-[13px] leading-relaxed" style={{ color: "var(--danger)" }}>
+            Your comment is up, but the mention did not reach them. Try the
+            comment again in a moment.
           </p>
         )}
         {mine > 0 && (
