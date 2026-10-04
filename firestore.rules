@@ -152,6 +152,24 @@ service cloud.firestore {
     // error, so the check costs one exists() per row and cannot be sidestepped
     // by editing the client.
     match /posts/{postId} {
+      /**
+       * The post one level up. Declared here rather than inside a child match
+       * because every subcollection needs the same two questions answered the
+       * same way, and a rule file that answers them three times is a rule file
+       * that eventually answers them two different ways.
+       *
+       * `get()` is not memoised, so a caller that needs the author twice pays
+       * twice. Every child below reads it once and keeps it in a local.
+       */
+      function parentPost() {
+        return get(/databases/$(database)/documents/posts/$(postId));
+      }
+
+      /** Readable exactly when the post above it is, which is canSeePost. */
+      function parentVisible() {
+        return signedIn() && canSeePost(parentPost().data);
+      }
+
       allow read: if signedIn()
         && (resource.data.authorUid == request.auth.uid
           || followsAuthor(request.auth.uid, resource.data.authorUid));
@@ -161,7 +179,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
              "authorUid", "authorName", "workoutName",
              "sets", "volumeKg", "date", "createdAt", "reactions",
-             "kind", "commentCount", "notes", "detail"
+             "kind", "commentCount", "notes", "detail", "thumb"
            ])
         && request.resource.data.reactions.size() == 0
         && request.resource.data.notes.size() == 0
@@ -170,6 +188,12 @@ service cloud.firestore {
         && request.resource.data.sets >= 0
         && request.resource.data.volumeKg is number
         && request.resource.data.volumeKg >= 0
+        // The inline thumbnail rides on every one of the feed's 25 rows, so it
+        // is capped well below Firestore's 1 MiB document ceiling. Absent means
+        // the post simply has no picture, which is the common case.
+        && (!("thumb" in request.resource.data)
+          || (request.resource.data.thumb is bytes
+            && request.resource.data.thumb.size() <= 24 * 1024))
         // How much detail a post may carry is the athlete's own setting, and
         // it lives on their profile, so the post cannot claim more than they
         // opted into. A profile written before the setting existed has no
@@ -182,7 +206,9 @@ service cloud.firestore {
       // their own, or one from an account they follow. commentCount is here
       // because the count belongs to the thread rather than to whoever is
       // commenting. Nobody can rewrite another athlete's numbers, their name,
-      // or the date.
+      // or the date. `thumb` is absent from that list on purpose: a picture is
+      // what was said at the time, and it is not swappable afterwards, by the
+      // author or by anyone else.
       allow update: if signedIn()
         && (resource.data.authorUid == request.auth.uid
           || followsAuthor(request.auth.uid, resource.data.authorUid))
@@ -195,22 +221,13 @@ service cloud.firestore {
 
       // Comments live here rather than on the post because a post is read by
       // up to 25 people at once and a thread is read by one person at a time.
-      // Each allow here spends at most two get() calls on the parent plus one
-      // exists() for the follow, which is inside the 10 document access calls a
-      // rules evaluation is allowed. `parent()` is called twice in the worst
-      // case because rules do not memoise a get(), and short circuits keep the
-      // common cases down at one or none.
+      // Each allow here spends one get() on the parent plus one exists() for
+      // the follow, which is inside the 10 document access calls a rules
+      // evaluation is allowed. Short circuits keep the common cases down at one
+      // call or none: deleting your own comment never reads the parent at all.
       match /comments/{commentId} {
         function parent() {
-          return get(/databases/$(database)/documents/posts/$(postId)).data;
-        }
-
-        // Readable exactly when the post above it is, which is the same test
-        // the post's own read rule applies.
-        function parentVisible() {
-          return signedIn()
-            && (parent().authorUid == request.auth.uid
-              || followsAuthor(request.auth.uid, parent().authorUid));
+          return parentPost().data;
         }
 
         allow read: if parentVisible();
@@ -233,6 +250,49 @@ service cloud.firestore {
         allow delete: if signedIn()
           && (resource.data.authorUid == request.auth.uid
             || parent().authorUid == request.auth.uid);
+      }
+
+      // The full-size picture behind a post, read only when the post is opened.
+      //
+      // It is a separate document for the same reason the avatar is: the feed
+      // reads 25 posts at once and a full image on each of them would be
+      // megabytes over mobile data. The thumbnail on the post is what the feed
+      // renders, so nothing here is ever spent per row.
+      //
+      // Visibility is exactly the post's own, resolved through the same
+      // canSeePost the post rule and the comment rule above already use. A
+      // full image must never be readable by somebody who could not read the
+      // post it belongs to, and it is worse here than for a comment: the post
+      // carries a name and a set count, while this is the athlete's own gym,
+      // their surroundings and whoever else happened to be in frame.
+      //
+      // Cost: one get() on the parent, plus one exists() for the follow when
+      // the reader does not own the post. `canSeePost` is given the parent once
+      // and reads it once, so this stays at two document access calls, against
+      // the ten an evaluation is allowed. That is only ever spent on a post
+      // somebody deliberately opened, so it cannot be spent per row of a feed.
+      match /photo {
+        function parent() {
+          return parentPost().data;
+        }
+
+        allow read: if parentVisible();
+
+        // The author's own picture, attached once. It is never swapped: there is
+        // no update rule, so a second write of the same document is refused.
+        // A post is written first and the picture goes in after, because the
+        // picture needs the post id.
+        allow create: if signedIn()
+          && parent().authorUid == request.auth.uid
+          && request.resource.data.keys().hasOnly(["bytes"])
+          && request.resource.data.bytes is bytes
+          // Under Firestore's 1 MiB document ceiling, with room to spare.
+          && request.resource.data.bytes.size() <= 900 * 1024;
+
+        allow update: if false;
+
+        // Taking a picture down is the author's own call.
+        allow delete: if signedIn() && parent().authorUid == request.auth.uid;
       }
     }
 

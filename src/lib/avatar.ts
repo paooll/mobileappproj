@@ -2,28 +2,54 @@ import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 /**
- * The profile photo lives in Firestore rather than Cloud Storage.
+ * Resizing images, in one place.
  *
  * Cloud Storage has required a billing-enabled project since February 2026, and
- * this app is meant to run entirely on the free plan. A 256px JPEG at quality
- * 0.82 is roughly 15 to 25 KB, comfortably inside Firestore's 1 MiB document
- * limit, and a document read is billed once regardless of its size.
+ * this app is meant to run entirely on the free plan, so every image is
+ * resized in the browser and written to Firestore as bytes. Firestore's hard
+ * per-document ceiling is 1 MiB, which means the resize has to happen before
+ * the write and never after it.
  *
- * It sits in its own document at users/{uid}/avatar rather than on the profile
- * itself, so the profile that the route guard reads on every navigation does not
- * carry a few hundred kilobytes of image behind it.
+ * Two callers share the pipeline below, and only the sizes differ: a profile
+ * photo, and a post photo that is stored twice at two resolutions. Keeping one
+ * implementation is what keeps the guard honest, because a second resizer would
+ * be a second chance to forget the ceiling.
  */
 
-/** Long edge of the stored image. Enough for a 56px avatar at any density. */
+/** Long edge of a profile photo. Enough for a 56px avatar at any density. */
 const EDGE = 256;
 /** Anything larger than this is a raw camera file, not a picture meant to be sent. */
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 /** Firestore's hard per-document ceiling. A resize bug must never reach the write. */
 const MAX_STORED_BYTES = 400 * 1024;
 
+/** Long edge of the inline feed thumbnail. */
+export const THUMB_EDGE = 160;
+/**
+ * Long edge of the full image behind posts/{postId}/photo. 1024 is enough to
+ * fill a phone screen at any density and still lands inside the guard below.
+ */
+export const FULL_EDGE = 1024;
+
+/**
+ * The rules cap an inline thumbnail well below Firestore's 1 MiB ceiling,
+ * because a thumbnail rides on every one of the feed's 25 rows. 24 KB is
+ * roughly triple the size a 160px JPEG actually lands at, so this is headroom
+ * for a noisy image rather than a budget the encoder usually reaches.
+ */
+export const THUMB_MAX_BYTES = 24 * 1024;
+
+/**
+ * Quality is stepped down rather than the image being rejected, so a difficult
+ * photo still makes it into the post instead of failing at the last step. The
+ * ladder ends at a floor that is visibly soft rather than at a size it cannot
+ * meet: below this the image stops being worth sending.
+ */
+const QUALITY_LADDER = [0.82, 0.7, 0.58, 0.46];
+
 const AVATAR_DOC = "avatar";
 
-export type AvatarReason =
+export type PhotoReason =
   | "too-large-source"
   | "too-large-stored"
   | "not-an-image"
@@ -33,6 +59,10 @@ export type AvatarReason =
 
 function mb(bytes: number): string {
   return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
+function kb(bytes: number): string {
+  return `${Math.round(bytes / 1024)} KB`;
 }
 
 /**
@@ -48,9 +78,9 @@ function isHeic(file: File): boolean {
   return /\.(heic|heif)$/i.test(file.name);
 }
 
-export class AvatarError extends Error {
-  reason: AvatarReason;
-  constructor(reason: AvatarReason, message: string) {
+export class PhotoError extends Error {
+  reason: PhotoReason;
+  constructor(reason: PhotoReason, message: string) {
     super(message);
     this.reason = reason;
   }
@@ -64,10 +94,10 @@ export class AvatarError extends Error {
  * than quietly handing back the original. The caller decides what to do with
  * that, and can say so plainly instead of blaming the wrong thing.
  */
-async function downscale(file: File): Promise<Blob | null> {
+async function downscale(file: File, edge: number, quality: number): Promise<Blob | null> {
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
 
@@ -80,22 +110,113 @@ async function downscale(file: File): Promise<Blob | null> {
     bitmap.close();
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.82)
+      canvas.toBlob(resolve, "image/jpeg", quality)
     );
     if (blob) return blob;
   } catch (err) {
-    console.warn("avatar: could not decode", file.type || file.name, err);
+    console.warn("photo: could not decode", file.type || file.name, err);
   }
   return null;
 }
 
+async function toBytes(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 /**
- * Saves a new photo, replacing any previous one. Returns the stored bytes so the
- * caller can render it straight away.
+ * Rejects everything that is not a picture this browser can reasonably handle,
+ * before a pixel is decoded. Every rejection names its own cause, because one
+ * "too large" message covering a 30 MB raw file, a HEIC this browser cannot
+ * decode, and a refused write makes the real problem impossible to act on.
+ */
+function checkSource(file: File): void {
+  if (isHeic(file)) {
+    throw new PhotoError(
+      "unsupported-format",
+      "That's an iPhone HEIC photo, which only Safari can read. Open it on your phone, or export it as a JPEG first."
+    );
+  }
+  if (!file.type.startsWith("image/")) {
+    throw new PhotoError(
+      "not-an-image",
+      `That file isn't an image${file.type ? ` (${file.type})` : ""}. Pick a JPEG or PNG.`
+    );
+  }
+  if (file.size > MAX_SOURCE_BYTES) {
+    throw new PhotoError(
+      "too-large-source",
+      `That photo is ${mb(file.size)}. Pick one under 25 MB.`
+    );
+  }
+}
+
+/**
+ * Encodes one size, walking down the quality ladder until the result fits under
+ * `maxBytes`. Throws only when no rung of the ladder fits, which is the point
+ * at which the honest answer is that this image cannot be stored rather than a
+ * picture that quietly loses detail forever.
+ */
+async function encodeWithin(
+  file: File,
+  edge: number,
+  maxBytes: number
+): Promise<Uint8Array> {
+  let decoded = false;
+  for (const quality of QUALITY_LADDER) {
+    const blob = await downscale(file, edge, quality);
+    if (!blob) continue;
+    decoded = true;
+    const bytes = await toBytes(blob);
+    if (bytes.byteLength <= maxBytes) return bytes;
+    console.info(`photo: ${edge}px at q${quality} was ${kb(bytes.byteLength)}, stepping down`);
+  }
+  // Never decoded at all is a different problem from never small enough, and
+  // telling somebody their photo did not shrink when the browser could not read
+  // it sends them hunting the wrong fix.
+  if (!decoded) {
+    throw new PhotoError(
+      "unsupported-format",
+      "This browser couldn't read that image. Try a JPEG or PNG, or pick it on a different device."
+    );
+  }
+  throw new PhotoError(
+    "too-large-stored",
+    `That photo didn't shrink enough under ${kb(maxBytes)}. Try a smaller or simpler image.`
+  );
+}
+
+/** The two resolutions a post photo is stored at. */
+export interface PostPhoto {
+  /** 160px JPEG, small enough to ride inline on the post document. */
+  thumb: Uint8Array;
+  /** 1024px JPEG, read from posts/{postId}/photo only when the post is opened. */
+  full: Uint8Array;
+}
+
+/**
+ * Resizes one picked file into the pair a post carries. The thumbnail is
+ * produced first because it is the one that has to fit the feed's budget, and a
+ * failure there should surface before the expensive one is encoded.
  *
- * Every rejection names its own cause. One "too large" message used to cover a
- * 30 MB raw file, a HEIC this browser cannot decode, and a refused write, which
- * made the real problem impossible to act on.
+ * The two encodings are independent, so a browser that can only manage the
+ * small one still produces a post rather than nothing.
+ */
+export async function resizeForPost(file: File): Promise<PostPhoto> {
+  checkSource(file);
+  const thumb = await encodeWithin(file, THUMB_EDGE, THUMB_MAX_BYTES);
+  const full = await encodeWithin(file, FULL_EDGE, MAX_STORED_BYTES);
+  return { thumb, full };
+}
+
+/**
+ * Saves a new profile photo, replacing any previous one. Returns the stored
+ * bytes so the caller can render it straight away.
+ *
+ * A 256px JPEG at quality 0.82 is roughly 15 to 25 KB, comfortably inside the
+ * document limit, and a document read is billed once regardless of its size.
+ * It sits in its own document at users/{uid}/avatar rather than on the profile
+ * itself, so the profile that the route guard reads on every navigation does
+ * not carry a few hundred kilobytes of image behind it.
  */
 export async function uploadAvatar(uid: string, file: File): Promise<Uint8Array> {
   const label = file.name || file.type || "photo";
@@ -103,50 +224,20 @@ export async function uploadAvatar(uid: string, file: File): Promise<Uint8Array>
     `avatar: ${label} type=${file.type || "(none)"} size=${mb(file.size)} ua=${navigator.userAgent}`
   );
 
-  if (isHeic(file)) {
-    throw new AvatarError(
-      "unsupported-format",
-      "That's an iPhone HEIC photo, which only Safari can read. Open it on your phone, or export it as a JPEG first."
-    );
-  }
-  if (!file.type.startsWith("image/")) {
-    throw new AvatarError(
-      "not-an-image",
-      `That file isn't an image${file.type ? ` (${file.type})` : ""}. Pick a JPEG or PNG.`
-    );
-  }
-  if (file.size > MAX_SOURCE_BYTES) {
-    throw new AvatarError(
-      "too-large-source",
-      `That photo is ${mb(file.size)}. Pick one under 25 MB.`
-    );
-  }
+  checkSource(file);
 
-  const resized = await downscale(file);
-  // Only usable if it was already small; otherwise the browser simply could not
-  // read it, and saying "too large" would send the athlete hunting the wrong fix.
-  const blob = resized ?? (file.size <= MAX_STORED_BYTES ? file : null);
-  if (!blob) {
-    throw new AvatarError(
-      "unsupported-format",
-      "This browser couldn't read that image. Try a JPEG or PNG, or pick it on a different device."
-    );
-  }
-
+  // A browser that cannot decode a file this small can still keep the original
+  // rather than losing the photo over an encoder quirk.
   let bytes: Uint8Array;
   try {
-    bytes = new Uint8Array(await blob.arrayBuffer());
+    bytes = await encodeWithin(file, EDGE, MAX_STORED_BYTES);
   } catch (err) {
-    console.error(err);
-    throw new AvatarError("unsupported-format", "Couldn't read that file. Try another image.");
-  }
-
-  if (bytes.byteLength > MAX_STORED_BYTES) {
-    console.warn(`avatar: stored ${bytes.byteLength} bytes exceeds cap for ${label}`);
-    throw new AvatarError(
-      "too-large-stored",
-      `That photo didn't shrink enough (${Math.round(bytes.byteLength / 1024)} KB). Try a smaller or simpler image.`
-    );
+    if (err instanceof PhotoError && err.reason === "unsupported-format") {
+      if (file.size > MAX_STORED_BYTES) throw err;
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } else {
+      throw err;
+    }
   }
 
   try {
@@ -155,12 +246,12 @@ export async function uploadAvatar(uid: string, file: File): Promise<Uint8Array>
     const code = (err as { code?: string }).code ?? "";
     console.error("avatar: write failed", code, err);
     if (code === "permission-denied") {
-      throw new AvatarError(
+      throw new PhotoError(
         "not-allowed",
         "This account isn't allowed to store a photo. Try signing out and back in."
       );
     }
-    throw new AvatarError(
+    throw new PhotoError(
       "save-failed",
       `Couldn't save that photo${code ? ` (${code})` : ""}. Check your connection and try again.`
     );
