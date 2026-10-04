@@ -13,6 +13,23 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/follows/$(readerId + "__" + authorId));
     }
 
+    /**
+     * Whether a post can be read by the signed-in account. Shared by the
+     * comment and notification rules so "can see this post" is one question
+     * with one answer, rather than three copies that can drift apart.
+     */
+    function canSeePost(post) {
+      return signedIn()
+        && (post.authorUid == request.auth.uid
+          || followsAuthor(request.auth.uid, post.authorUid));
+    }
+
+    /** The same question for a notification, asked about its post id. */
+    function canSeeSourcePost() {
+      let p = get(/databases/$(database)/documents/posts/$(request.resource.data.postId));
+      return p.exists() && canSeePost(p.data);
+    }
+
     // Exercise catalog: readable by any signed-in user; seeded once client-side
     // (re-seeds may update existing docs when the catalog version bumps)
     match /exercises/{exerciseId} {
@@ -143,26 +160,110 @@ service cloud.firestore {
         && request.resource.data.authorUid == request.auth.uid
         && request.resource.data.keys().hasOnly([
              "authorUid", "authorName", "workoutName",
-             "sets", "volumeKg", "date", "createdAt", "reactions"
+             "sets", "volumeKg", "date", "createdAt", "reactions",
+             "kind", "commentCount", "notes", "detail"
            ])
         && request.resource.data.reactions.size() == 0
+        && request.resource.data.notes.size() == 0
+        && request.resource.data.commentCount == 0
         && request.resource.data.sets is int
         && request.resource.data.sets >= 0
         && request.resource.data.volumeKg is number
-        && request.resource.data.volumeKg >= 0;
+        && request.resource.data.volumeKg >= 0
+        // How much detail a post may carry is the athlete's own setting, and
+        // it lives on their profile, so the post cannot claim more than they
+        // opted into. A profile written before the setting existed has no
+        // `postDetail`, and absence reads as summary rather than as full.
+        && (!("detail" in request.resource.data)
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.postDetail == "full");
 
-      // Reactions are the only field anyone may change, and only on a post they
-      // can already read: their own, or one from an account they follow. Nobody
-      // can rewrite another athlete's numbers, their name, or the date. Your
-      // own summary is reactable too, or the row on your own feed would sit
-      // there refusing every tap.
+      // Reactions, the word that came with one, and the comment count are the only
+      // fields anyone may change, and only on a post they can already read:
+      // their own, or one from an account they follow. commentCount is here
+      // because the count belongs to the thread rather than to whoever is
+      // commenting. Nobody can rewrite another athlete's numbers, their name,
+      // or the date.
       allow update: if signedIn()
         && (resource.data.authorUid == request.auth.uid
           || followsAuthor(request.auth.uid, resource.data.authorUid))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             "reactions", "notes", "commentCount"
+           ]);
 
       // Taking a summary back down is the author's own call.
       allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+
+      // Comments live here rather than on the post because a post is read by
+      // up to 25 people at once and a thread is read by one person at a time.
+      // Each allow here spends at most two get() calls on the parent plus one
+      // exists() for the follow, which is inside the 10 document access calls a
+      // rules evaluation is allowed. `parent()` is called twice in the worst
+      // case because rules do not memoise a get(), and short circuits keep the
+      // common cases down at one or none.
+      match /comments/{commentId} {
+        function parent() {
+          return get(/databases/$(database)/documents/posts/$(postId)).data;
+        }
+
+        // Readable exactly when the post above it is, which is the same test
+        // the post's own read rule applies.
+        function parentVisible() {
+          return signedIn()
+            && (parent().authorUid == request.auth.uid
+              || followsAuthor(request.auth.uid, parent().authorUid));
+        }
+
+        allow read: if parentVisible();
+
+        allow create: if signedIn()
+          && parentVisible()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+               "authorUid", "authorName", "body", "mentions", "createdAt"
+             ])
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 280;
+
+        // A written word is not editable once it is said. Say it again instead.
+        allow update: if false;
+
+        // Your own word, or moderation on a post of your own. The first branch
+        // short circuits, so deleting your own comment never spends a get().
+        allow delete: if signedIn()
+          && (resource.data.authorUid == request.auth.uid
+            || parent().authorUid == request.auth.uid);
+      }
+    }
+
+    // ---------- Notifications ----------
+    //
+    // No Cloud Functions run on the free plan, so there is nothing to notice a
+    // mention and forward it. The person who wrote the comment drops the
+    // notification in from their own device instead, which is sound rather than
+    // a shortcut: they are already allowed to write the comment, and the rule
+    // below proves they could read the post the comment sits under. Without
+    // that proof any account could post a bell into anybody else's.
+
+    match /notifications/{uid}/items/{itemId} {
+      // The path segment here is a bare uid, so unlike an edge id it can be
+      // compared to request.auth.uid directly.
+      allow read: if signedIn() && uid == request.auth.uid;
+      allow update: if signedIn() && uid == request.auth.uid;
+      allow delete: if signedIn() && uid == request.auth.uid;
+
+      allow create: if signedIn()
+        && uid != request.auth.uid
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             "fromUid", "fromName", "postId", "body", "createdAt", "read"
+           ])
+        && request.resource.data.read == false
+        && request.resource.data.postId is string
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 280
+        && canSeeSourcePost();
     }
 
     // Workouts: owner-scoped

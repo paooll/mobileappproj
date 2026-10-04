@@ -228,3 +228,29 @@ export function buildRanks(sets: Iterable<WorkoutSet>): LiftRank[] {
     };
   });
 }
+
+/**
+ * Lifts that went up a rung because of what was just logged.
+ *
+ * A rank crossing is a comparison, so it needs the athlete's history as well as
+ * the session. Pass the archive from before the session and the archive with
+ * the session added: a lift is announced only when its tier actually moved, so
+ * logging a good session that does not beat a personal best stays quiet.
+ */
+export function rankUpsFor(
+  before: Iterable<WorkoutSet>,
+  after: Iterable<WorkoutSet>
+): { lift: string; rank: string; e1rm: number }[] {
+  const was = new Map(buildRanks(before).map((r) => [r.lift, r]));
+  const now = buildRanks(after);
+  const ups: { lift: string; rank: string; e1rm: number }[] = [];
+  for (const r of now) {
+    if (r.e1rm === null) continue;
+    const prior = was.get(r.lift);
+    // An unstarted lift reaching its first rung counts: that is a crossing.
+    if (prior && prior.e1rm !== null && prior.tier === r.tier) continue;
+    if (prior && prior.tier > r.tier) continue;
+    if (!prior || prior.tier < r.tier) ups.push({ lift: r.lift, rank: r.rank, e1rm: r.e1rm });
+  }
+  return ups;
+}

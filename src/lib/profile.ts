@@ -17,6 +17,18 @@ export type Goal = "strength" | "muscle" | "endurance" | "general";
 export const ROUNDING_OPTIONS = [0.5, 1, 2.5] as const;
 export type Rounding = (typeof ROUNDING_OPTIONS)[number];
 
+/**
+ * How much of a session leaves the account when it is shared. `summary` is the
+ * name, the set count and the volume; `full` adds every set with its weight.
+ * The rules read this field, so it cannot be bypassed by an edited client.
+ */
+export type PostDetail = "summary" | "full";
+
+export const POST_DETAIL_OPTIONS: { value: PostDetail; label: string; hint: string }[] = [
+  { value: "summary", label: "Summary only", hint: "Name, sets and volume" },
+  { value: "full", label: "Every set", hint: "Exercises, weights and reps" },
+];
+
 /** Preferences that tune how the app behaves, kept apart from the setup answers. */
 export interface UserPrefs {
   /** Buzz on step taps and when rest ends. */
@@ -27,6 +39,8 @@ export interface UserPrefs {
   roundTo: Rounding;
   /** Send the Monday progress digest by email. */
   weeklyDigest: boolean;
+  /** How much detail a shared session carries. */
+  postDetail: PostDetail;
   /** 0 = Sunday. Only meaningful when weeklyDigest is on. */
   digestDay: number;
   /** Name shown instead of the email address where there is room. */
@@ -63,6 +77,9 @@ export const DEFAULT_PREFS: UserPrefs = {
   coach: true,
   roundTo: 2.5,
   weeklyDigest: false,
+  // Summary until somebody says otherwise: a profile written before this
+  // setting existed has no field, and sharing less is the safe way to read it.
+  postDetail: "summary",
   digestDay: 1,
   displayName: "",
 };
@@ -158,6 +175,7 @@ export async function loadProfile(uid: string): Promise<UserProfile | null> {
       ? (d.roundTo as Rounding)
       : DEFAULT_PREFS.roundTo,
     weeklyDigest: d.weeklyDigest === true,
+    postDetail: d.postDetail === "full" ? "full" : DEFAULT_PREFS.postDetail,
     digestDay:
       typeof d.digestDay === "number" && d.digestDay >= 0 && d.digestDay <= 6
         ? Math.round(d.digestDay)
@@ -186,6 +204,7 @@ export function pickPrefs(profile: UserProfile): UserPrefs {
     coach: profile.coach,
     roundTo: profile.roundTo,
     weeklyDigest: profile.weeklyDigest,
+    postDetail: profile.postDetail,
     digestDay: profile.digestDay,
     displayName: profile.displayName,
   };

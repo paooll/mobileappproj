@@ -149,19 +149,93 @@ ever leaves the account.
 | `date`        | string            | `YYYY-MM-DD`                             |
 | `createdAt`   | number            | epoch ms, the feed order                  |
 | `reactions`   | map<string, uid[]> | reaction key to the uids who gave it    |
+| `notes`       | map<string, string> | reaction key to the one word sent with it |
+| `commentCount`| number            | denormalised thread size, 0 at post time |
+| `kind`        | string            | `session`, or `milestone` when the app posted a rank crossing |
+| `detail`      | {name,weight,reps}[] | every set, only when the athlete's `postDetail` is `full` |
 
-No exercise name, no weight, no rep count is ever written here, and the create
-rule will not accept a document carrying one. `hasOnly([...])` on the create
-rule is what makes that a guarantee rather than a promise.
+`detail` is the athlete's own choice and it lives on their profile as
+`postDetail` (`summary` or `full`, defaulting to `summary`). The create rule
+reads that profile and refuses a post carrying `detail` unless the setting says
+`full`, so the choice cannot be bypassed by an edited client. A profile written
+before the setting existed has no `postDetail`, and a missing field reads as
+summary rather than as full.
+
+`commentCount` is denormalised rather than counted on read, because counting it
+would mean opening the subcollection behind every one of the feed's 25 rows. It
+is bumped inside the same transaction that writes the comment, so two comments
+landing at once cannot both read the same count. Deleting a comment does not
+decrement it: the delete and the count would race, and an over-count is a
+smaller lie than a count that drops to a wrong number.
+
+Milestones are ordinary posts with a different `kind`, which is why they cost
+the feed query nothing extra and render as their own card.
+
+### `posts/{postId}/comments/{commentId}`
+
+One reply on a session or milestone.
+
+| Field         | Type     | Description                          |
+| ------------- | -------- | ------------------------------------ |
+| `authorUid`   | string   | who wrote it                         |
+| `authorName`  | string   | name at the time                     |
+| `body`        | string   | the comment, 280 characters at most  |
+| `mentions`    | string[] | uids named with `@`, for the badge   |
+| `createdAt`   | number   | epoch ms                             |
+
+A thread lives in a subcollection rather than on the post because a post is
+read by up to 25 people at once and a thread is read by one person at a time.
+Inlining it would put a comment query behind every row of the feed. Reads are
+capped at 50 and sorted oldest first.
+
+A comment is readable exactly when the post above it is, which the rule decides
+with one `get()` on the parent and, for somebody who does not own it, one
+`exists()` for the follow. That is the canonical Firestore subcollection pattern
+and it costs three document access calls at worst, inside the ten a rules
+evaluation is allowed.
+
+A comment is never editable once written, only deletable, and only by whoever
+wrote it or by the owner of the post.
+
+### `notifications/{uid}/items/{itemId}`
+
+One mention, delivered to the account named.
+
+| Field       | Type   | Description                            |
+| ----------- | ------ | -------------------------------------- |
+| `fromUid`   | string | who wrote the comment                  |
+| `fromName`  | string | their name at the time                 |
+| `postId`    | string | the post the comment sits under        |
+| `body`      | string | the comment as written, 280 at most    |
+| `createdAt` | number | epoch ms                               |
+| `read`      | boolean | false until the bell is opened        |
+
+Cloud Functions cannot run on the free plan, so nothing exists to notice a
+mention and forward it. The device that wrote the comment drops the
+notification in instead. That is sound rather than a shortcut: the writer is
+already permitted to write the comment, and the create rule additionally proves
+the writer could read the post the comment sits under. Without that proof any
+account could ring any other account's bell with a link to a post they have
+never been allowed to see.
+
+Reading costs nothing: the collection path is `notifications/{uid}/items`, so
+the recipient owns the documents outright and the rule is a single comparison.
+This is the only collection in the app whose rule needs no document access at
+all. Reads are capped at 30, newest first.
+
+No exercise name, no weight, no rep count is written here unless the athlete has
+chosen `postDetail: "full"`, and the create rule refuses a document carrying one
+otherwise. `hasOnly([...])` on the create rule, together with the profile read,
+is what makes that a choice rather than a claim.
 
 The feed is one query over this collection, narrowed to `authorUid in [...]`,
 and the rules narrow it again: a post is readable by its author and by
 accounts that follow the author, so a query that asks for more than the reader
-is entitled to gets those documents dropped rather than an error. Reactions
-are the only field anyone may write, on your own post or one from an account
-you follow, enforced with
-`diff().affectedKeys().hasOnly(["reactions"])`, so no client can rewrite
-another athlete's numbers.
+is entitled to gets those documents dropped rather than an error. Reactions,
+the word attached to one, and the comment count are the only fields anyone may
+write, on your own post or one from an account you follow, enforced with
+`diff().affectedKeys().hasOnly([...])`, so no client can rewrite another
+athlete's numbers.
 
 ### `workouts`
 

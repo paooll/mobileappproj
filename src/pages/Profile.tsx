@@ -45,6 +45,7 @@ import {
   DIGEST_DAYS,
   EXPERIENCE_OPTIONS,
   GOAL_OPTIONS,
+  POST_DETAIL_OPTIONS,
   ROUNDING_OPTIONS,
   digestDayName,
   initialsOf,
@@ -682,6 +683,43 @@ export default function Profile({ profile }: { profile: UserProfile }) {
               label="Vibrate when a set is logged"
             />
           </SettingRow>
+        </div>
+      </Section>
+
+      {/* What leaves the account when a session is shared */}
+      <Section title="Sharing">
+        <div className="flex flex-col gap-2">
+          <SettingBlock
+            label="What a shared session carries"
+            hint="Set on your profile and enforced by the rules, so an edited app cannot share more than you chose."
+          >
+            <div className="flex gap-2">
+              {POST_DETAIL_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() =>
+                    updatePref({
+                      postDetail: o.value,
+                    })
+                  }
+                  aria-pressed={prefs.postDetail === o.value}
+                  className={`flex-1 ${prefs.postDetail === o.value ? "btn-solid" : "btn-line"}`}
+                  style={
+                    prefs.postDetail === o.value
+                      ? { background: "var(--ink)", color: "var(--bg)" }
+                      : undefined
+                  }
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[13px] text-[var(--ink-3)]">
+              {prefs.postDetail === "full"
+                ? "Every set, with its weight and reps, shows on your posts."
+                : "Only the session name, the set count and the volume."}
+            </p>
+          </SettingBlock>
         </div>
       </Section>
 

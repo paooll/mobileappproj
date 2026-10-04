@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Copy, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { Check, Copy, Trophy, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
 import ConfirmSheet from "../components/ConfirmSheet";
 import ReactionRow from "../components/ReactionRow";
+import PostSheet from "../components/PostSheet";
+import NotificationBell from "../components/NotificationBell";
+import Sheet from "../components/Sheet";
+import { ChatCircle } from "@phosphor-icons/react";
 import { useToast } from "../components/Toast";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
+  CHEER_MAX,
   REACTIONS,
   acceptFollow,
   authorNameOf,
@@ -194,15 +199,19 @@ function FindPeople({
   );
 }
 
-/** One shared session. The summary is all there is, by design. */
+/** One shared session, or a rank crossing the app posted on your behalf. */
 function PostRow({
   post,
   uid,
   onReact,
+  onCheer,
+  onOpen,
 }: {
   post: FeedPost;
   uid: string;
   onReact: (post: FeedPost, key: ReactionKey) => void;
+  onCheer: (post: FeedPost, key: ReactionKey) => void;
+  onOpen: (post: FeedPost) => void;
 }) {
   const [unit] = useUnit();
   const counts = useMemo(() => {
@@ -216,9 +225,19 @@ function PostRow({
     return out;
   }, [post, uid]);
   const [busy, setBusy] = useState(false);
+  const milestone = post.kind === "milestone";
 
   return (
-    <article className="px-4 py-4">
+    <article className={milestone ? "px-4 py-4" : "px-4 py-4"}>
+      {milestone && (
+        <span
+          className="tab mb-2 inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.06em]"
+          style={{ background: "var(--fill)", color: "var(--ink)" }}
+        >
+          <Trophy size={13} weight="fill" />
+          Rank up
+        </span>
+      )}
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em]">
           {post.authorName}
@@ -233,10 +252,11 @@ function PostRow({
         <span className="px-1.5 text-[var(--ink-3)]">·</span>
         {postVolume(post, unit)}
       </p>
-      <div className="mt-3">
+      <div className="mt-3 flex items-center gap-2">
         <ReactionRow
           counts={counts}
           mine={mine}
+          notes={post.notes ?? {}}
           busy={busy}
           onReact={async (key) => {
             if (busy) return;
@@ -247,9 +267,73 @@ function PostRow({
               setBusy(false);
             }
           }}
+          onCheer={(key) => onCheer(post, key)}
         />
+        <button
+          onClick={() => onOpen(post)}
+          aria-label={
+            post.commentCount === 0
+              ? "Comment on this"
+              : `Comments, ${post.commentCount} so far`
+          }
+          className="tab ml-auto flex h-11 shrink-0 items-center gap-1.5 px-3 text-[13px] font-semibold"
+          style={{ background: "var(--fill)", color: "var(--ink-2)" }}
+        >
+          <ChatCircle size={16} />
+          <span className="num">{post.commentCount}</span>
+        </button>
       </div>
     </article>
+  );
+}
+
+/** One word attached to a reaction. Forty characters is the whole budget. */
+function CheerSheet({
+  post,
+  cheerKey,
+  onClose,
+  onSend,
+}: {
+  post: FeedPost;
+  cheerKey: ReactionKey;
+  onClose: () => void;
+  onSend: (note: string) => void;
+}) {
+  // Mounted only while a cheer is open, so the word already on the reaction
+  // arrives as the initial value rather than through a setState in an effect.
+  const [note, setNote] = useState(() => post.notes?.[cheerKey] ?? "");
+  const label = REACTIONS.find((r) => r.key === cheerKey)?.label ?? "";
+
+  return (
+    <Sheet open title={`${label} it`} onClose={onClose}>
+      <div className="px-5 pb-5">
+        <label htmlFor="cheer-note" className="text-[14px] text-[var(--ink-2)]">
+          One word about this session
+        </label>
+        <input
+          id="cheer-note"
+          className="field mt-2"
+          value={note}
+          maxLength={CHEER_MAX}
+          placeholder="that bench moved"
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && note.trim()) onSend(note);
+          }}
+        />
+        <p className="mt-1.5 text-[12px] text-[var(--ink-3)]">
+          Optional. The word goes away when you take the reaction back.
+        </p>
+        <button
+          onClick={() => onSend(note)}
+          disabled={!note.trim()}
+          className="btn-solid mt-4 w-full disabled:opacity-60"
+          style={{ background: "var(--ink)", color: "var(--bg)" }}
+        >
+          Send
+        </button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -272,6 +356,18 @@ export default function Feed({ profile }: { profile: UserProfile }) {
   // but until it does the list would silently not change and the button reads
   // as broken rather than as sent.
   const [asked, setAsked] = useState<string[]>([]);
+  const [openPost, setOpenPost] = useState<FeedPost | null>(null);
+  const [cheering, setCheering] = useState<{ post: FeedPost; key: ReactionKey } | null>(null);
+
+  // Whoever can be named in a comment: the athlete plus everybody they follow.
+  // The Feed already has the follow list in memory, so a mention costs no read.
+  const mentionable = useMemo(
+    () => [
+      { uid, name: myName },
+      ...(following ?? []).map((f) => ({ uid: f.followeeUid, name: f.followeeName })),
+    ],
+    [uid, myName, following]
+  );
 
   const rise = reduce
     ? {}
@@ -332,7 +428,12 @@ export default function Feed({ profile }: { profile: UserProfile }) {
   };
 
   const react = useCallback(
-    async (post: FeedPost, key: ReactionKey) => {
+    async (post: FeedPost, key: ReactionKey, note = "") => {
+      const giving = !post.reactions?.[key]?.includes(uid);
+      const trimmed = note.trim().slice(0, CHEER_MAX);
+      const nextNotes = giving
+        ? { ...(post.notes ?? {}), [key]: trimmed }
+        : Object.fromEntries(Object.entries(post.notes ?? {}).filter(([k]) => k !== key));
       // Applied before the write so the mark lands under the finger. The
       // snapshot puts it right either way.
       setPosts((prev) =>
@@ -341,11 +442,12 @@ export default function Feed({ profile }: { profile: UserProfile }) {
               p.id === post.id
                 ? {
                     ...p,
+                    notes: nextNotes,
                     reactions: {
                       ...p.reactions,
-                      [key]: (p.reactions?.[key] ?? []).includes(uid)
-                        ? (p.reactions[key] ?? []).filter((u) => u !== uid)
-                        : [...(p.reactions?.[key] ?? []), uid],
+                      [key]: giving
+                        ? [...(p.reactions?.[key] ?? []), uid]
+                        : (p.reactions[key] ?? []).filter((u) => u !== uid),
                     },
                   }
                 : p
@@ -353,7 +455,7 @@ export default function Feed({ profile }: { profile: UserProfile }) {
           : prev
       );
       try {
-        await toggleReaction(post.id, uid, key);
+        await toggleReaction(post.id, uid, key, trimmed);
       } catch (err) {
         console.error(err);
         // Nothing arrives on a failed write, so the optimistic mark would sit
@@ -365,6 +467,17 @@ export default function Feed({ profile }: { profile: UserProfile }) {
       }
     },
     [uid, toast]
+  );
+
+  const sendCheer = useCallback(
+    async (note: string) => {
+      if (!cheering) return;
+      const { post, key } = cheering;
+      setCheering(null);
+      // The same write the plain reaction does, carrying the word with it.
+      await react(post, key, note);
+    },
+    [cheering, react]
   );
 
   const confirmLeave = async () => {
@@ -400,7 +513,10 @@ export default function Feed({ profile }: { profile: UserProfile }) {
         <motion.h1 {...rise} className="text-[30px] font-bold tracking-[-0.02em]">
           Feed
         </motion.h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <NotificationBell uid={uid} />
+          <ThemeToggle />
+        </div>
       </div>
       <p className="mt-1 text-[14px] text-[var(--ink-2)]">
         {follows.length === 0
@@ -438,7 +554,14 @@ export default function Feed({ profile }: { profile: UserProfile }) {
           <h2 className="label mt-10 mb-3">Recent sessions</h2>
           <div className="panel divide-y divide-[var(--line)]">
             {posts.map((p) => (
-              <PostRow key={p.id} post={p} uid={uid} onReact={react} />
+              <PostRow
+                key={p.id}
+                post={p}
+                uid={uid}
+                onReact={react}
+                onCheer={(post, key) => setCheering({ post, key })}
+                onOpen={setOpenPost}
+              />
             ))}
           </div>
         </>
@@ -482,6 +605,25 @@ export default function Feed({ profile }: { profile: UserProfile }) {
             )}
           </div>
         </>
+      )}
+
+      {openPost && (
+        <PostSheet
+          post={openPost}
+          uid={uid}
+          myName={myName}
+          mentionable={mentionable}
+          onClose={() => setOpenPost(null)}
+        />
+      )}
+
+      {cheering && (
+        <CheerSheet
+          post={cheering.post}
+          cheerKey={cheering.key}
+          onClose={() => setCheering(null)}
+          onSend={sendCheer}
+        />
       )}
 
       <ConfirmSheet

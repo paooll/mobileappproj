@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CaretLeft, X, Check, Timer } from "@phosphor-icons/react";
 import {
   getWorkout,
+  loadArchive,
   loadExercises,
   loadRecentArchive,
   addSet,
@@ -22,7 +23,8 @@ import {
   type RecentArchive,
 } from "../lib/coach";
 import { clampReps, loadStep, quickReps, snapWeight } from "../lib/setEntry";
-import { createPost } from "../lib/social";
+import { createMilestone, createPost } from "../lib/social";
+import { rankUpsFor } from "../lib/ranks";
 import { setHapticsEnabled, tick } from "../lib/haptics";
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
@@ -310,6 +312,16 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const finish = async () => {
     if (!id || finishing) return;
     setFinishing(true);
+    // Read the archive first. Finishing the workout invalidates the cache, so
+    // asking afterwards would mean paying for a cold read of every set, and
+    // this way a warm cache stays warm.
+    let history: WorkoutSet[] = [];
+    try {
+      const archive = await loadArchive(user?.uid ?? "");
+      history = [...archive.setsByWorkout.values()].flat();
+    } catch (err) {
+      console.error(err);
+    }
     try {
       await finishWorkout(id);
     } catch (err) {
@@ -320,6 +332,12 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     }
     // Sharing never blocks the finish. The session is already saved, so a
     // failed post is a feed that stays quiet rather than a lost workout.
+    const detail = sets.map((s) => ({
+      name: s.exerciseName,
+      weight: s.weight,
+      reps: s.reps,
+    }));
+    const crossed = rankUpsFor(history, [...history, ...sets]);
     try {
       await createPost({
         authorUid: user?.uid ?? "",
@@ -328,9 +346,30 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         sets: sets.length,
         volumeKg: sets.reduce((sum, s) => sum + s.weight * s.reps, 0),
         date: workout?.date ?? TODAY,
+        // Only sent when the athlete has opted into every set being shared.
+        // The rules check the same preference, so this is a courtesy to the
+        // reader rather than the thing that keeps the weights private.
+        ...(profile.postDetail === "full" ? { detail } : {}),
       });
     } catch (err) {
       console.error(err);
+    }
+    // A rank crossing is worth its own card. It is a second post rather than a
+    // field on the first because a rank can move on an exercise the session
+    // summary does not talk about, and because it renders as its own thing.
+    for (const up of crossed) {
+      try {
+        await createMilestone({
+          authorUid: user?.uid ?? "",
+          authorName: profile.displayName,
+          workoutName: `${up.lift} reached ${up.rank}`,
+          sets: 1,
+          volumeKg: up.e1rm,
+          date: workout?.date ?? TODAY,
+        });
+      } catch (err) {
+        console.error(err);
+      }
     }
     toast("Workout finished. Nice work.", "success");
     navigate("/app", { replace: true });

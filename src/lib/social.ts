@@ -9,6 +9,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   setDoc,
   updateDoc,
   where,
@@ -36,6 +37,18 @@ export const REACTIONS = [
 
 export type ReactionKey = (typeof REACTIONS)[number]["key"];
 
+/**
+ * How much of a session leaves the account. Chosen per athlete on Profile, so
+ * the feed can be as revealing or as discreet as the person logging wants.
+ */
+export type PostDetail = "summary" | "full";
+
+export interface LiftDetail {
+  name: string;
+  weight: number;
+  reps: number;
+}
+
 export interface FeedPost {
   id: string;
   authorUid: string;
@@ -48,7 +61,17 @@ export interface FeedPost {
   createdAt: number;
   /** Reaction key to the uids who gave it. */
   reactions: Record<string, string[]>;
+  /** session, or milestone when the app posted it for a rank crossing. */
+  kind: PostKind;
+  /** Denormalised so the feed never has to read the subcollection. */
+  commentCount: number;
+  /** Reaction key to the short word that came with it. */
+  notes: Record<string, string>;
+  /** Present only when the author shares full detail. */
+  detail?: LiftDetail[];
 }
+
+export type PostKind = "session" | "milestone";
 
 /** Somebody this account follows, and has been accepted by. */
 export interface Follow {
@@ -254,6 +277,9 @@ export interface PostDraft {
   volumeKg: number;
   /** YYYY-MM-DD */
   date: string;
+  kind?: PostKind;
+  /** Only sent when the athlete has postDetail set to "full". */
+  detail?: LiftDetail[];
 }
 
 export async function createPost(draft: PostDraft): Promise<string> {
@@ -263,21 +289,43 @@ export async function createPost(draft: PostDraft): Promise<string> {
     volumeKg: Math.round(draft.volumeKg),
     createdAt: Date.now(),
     reactions: {},
+    kind: draft.kind ?? "session",
+    commentCount: 0,
+    notes: {},
   });
   return ref.id;
 }
 
-/** Adds a reaction, or takes it back if this account already gave it. */
-export async function toggleReaction(postId: string, uid: string, key: ReactionKey) {
+/**
+ * A rank crossing is worth saying out loud, so it goes into the same feed as a
+ * session rather than a stream of its own. It costs the feed query nothing: a
+ * milestone is an ordinary post with a different `kind`.
+ */
+export function createMilestone(draft: Omit<PostDraft, "kind">) {
+  return createPost({ ...draft, kind: "milestone" });
+}
+
+/** Adds a reaction and, optionally, the word that goes with it. */
+export async function toggleReaction(postId: string, uid: string, key: ReactionKey, note = "") {
   const ref = doc(db, "posts", postId);
   const snap = await getDoc(ref);
   const current = (snap.data()?.reactions ?? {}) as Record<string, string[]>;
+  const notes = ((snap.data()?.notes ?? {}) as Record<string, string>) || {};
   const mine = current[key] ?? [];
-  const next = mine.includes(uid) ? mine.filter((u) => u !== uid) : [...mine, uid];
+  const giving = mine.includes(uid);
+  const next = giving ? mine.filter((u) => u !== uid) : [...mine, uid];
   // The key stays in place with an empty array, so a count can render as 0
-  // rather than the button vanishing and shifting the row under the thumb.
-  await updateDoc(ref, { reactions: { ...current, [key]: next } });
+  // rather than the button vanishing and shifting the row under the thumb. A
+  // word only lives while the reaction does: taking the reaction back takes the
+  // word with it, or a cheer would linger on a row nobody agrees with.
+  const nextNotes = giving
+    ? Object.fromEntries(Object.entries(notes).filter(([k]) => k !== key))
+    : { ...notes, [key]: note.trim().slice(0, CHEER_MAX) };
+  await updateDoc(ref, { reactions: { ...current, [key]: next }, notes: nextNotes });
 }
+
+/** A cheer is one word. Long enough to mean something, short enough to type. */
+export const CHEER_MAX = 40;
 
 export function countReaction(post: FeedPost, key: string): number {
   return post.reactions?.[key]?.length ?? 0;
@@ -366,4 +414,176 @@ export async function deleteOwnPosts(uid: string) {
 export async function deleteHandle(uid: string) {
   const mine = await getDocs(query(collection(db, "handles"), where("uid", "==", uid)));
   await deleteRefs(mine.docs.map((d) => d.ref));
+}
+
+/* ---------- Comments: opened on demand, never in the feed ---------- */
+
+/**
+ * A thread lives in a subcollection rather than on the post, because a post is
+ * read by up to 25 people at once and a thread is read by one person at a time.
+ * Inlining it would put a comment query behind every row of the feed.
+ */
+export interface PostComment {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  body: string;
+  /** uids named with @ in the body, for the badge and for the notification. */
+  mentions: string[];
+  createdAt: number;
+}
+
+/** A thread nobody reads past the first screen is not worth a long read. */
+export const COMMENTS_CAP = 50;
+
+/** Long enough to say a thing, short enough to be worth reading on a phone. */
+export const COMMENT_MAX = 280;
+
+export function subscribeComments(
+  postId: string,
+  cb: (rows: PostComment[]) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, "posts", postId, "comments"),
+      orderBy("createdAt", "asc"),
+      limit(COMMENTS_CAP)
+    ),
+    (snap) => cb(toRows<PostComment>(snap.docs)),
+    (err) => {
+      console.error(err);
+      cb([]);
+    }
+  );
+}
+
+/**
+ * The count on the post is denormalised rather than counted on read, so the
+ * feed never opens a subcollection. Two comments landing at once can both read
+ * the same count, so the bump happens in a transaction that re-reads first.
+ */
+export async function addComment(
+  postId: string,
+  authorUid: string,
+  authorName: string,
+  body: string,
+  mentions: string[]
+): Promise<void> {
+  const text = body.trim().slice(0, COMMENT_MAX);
+  if (!text) throw new Error("empty-comment");
+  const postRef = doc(db, "posts", postId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(postRef);
+    if (!snap.exists()) throw new Error("no-post");
+    tx.set(doc(collection(postRef, "comments")), {
+      authorUid,
+      authorName: authorNameOf(authorName),
+      body: text,
+      mentions,
+      createdAt: Date.now(),
+    });
+    tx.update(postRef, { commentCount: (snap.data().commentCount ?? 0) + 1 });
+  });
+}
+
+export async function deleteComment(postId: string, commentId: string): Promise<void> {
+  await deleteDoc(doc(db, "posts", postId, "comments", commentId));
+  // Deliberately not decremented: a delete racing the count would drop it to a
+  // wrong number, and an over-count is the smaller lie.
+}
+
+/* ---------- Mentions: written by the sender, because no server runs ---------- */
+
+export interface AppNotification {
+  id: string;
+  fromUid: string;
+  fromName: string;
+  postId: string;
+  /** The sentence as written, capped on write. */
+  body: string;
+  createdAt: number;
+  read: boolean;
+}
+
+/** The bell only ever needs the recent past. */
+export const NOTIFICATIONS_CAP = 30;
+
+/**
+ * Finds @Name in a body against the people the writer can actually name. It
+ * matches on the display name rather than a handle, because a handle is six
+ * characters read aloud across a gym floor and nobody types one into a comment.
+ */
+export function parseMentions(
+  body: string,
+  candidates: { uid: string; name: string }[]
+): string[] {
+  const hits: string[] = [];
+  for (const c of candidates) {
+    const name = c.name.trim();
+    if (!name || c.uid === "") continue;
+    if (new RegExp(`(^|\\s)@${escapeRegExp(name)}(?![\\w@])`, "i").test(body)) hits.push(c.uid);
+  }
+  return [...new Set(hits)];
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function subscribeNotifications(
+  uid: string,
+  cb: (rows: AppNotification[]) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, "notifications", uid, "items"),
+      orderBy("createdAt", "desc"),
+      limit(NOTIFICATIONS_CAP)
+    ),
+    (snap) => cb(toRows<AppNotification>(snap.docs)),
+    (err) => {
+      console.error(err);
+      cb([]);
+    }
+  );
+}
+
+/**
+ * No Cloud Functions run on the free plan, so the writer's own device drops the
+ * notification in. That is sound rather than a workaround: the writer is
+ * already allowed to write the comment, and the rules check the post is one
+ * they could read before letting the document land, so nobody can post a bell
+ * into an account that could not have seen it.
+ */
+export async function notifyMention(
+  toUid: string,
+  fromUid: string,
+  fromName: string,
+  postId: string,
+  body: string
+): Promise<void> {
+  if (toUid === fromUid) return;
+  await addDoc(collection(db, "notifications", toUid, "items"), {
+    fromUid,
+    fromName: authorNameOf(fromName),
+    postId,
+    body: body.trim().slice(0, COMMENT_MAX),
+    createdAt: Date.now(),
+    read: false,
+  });
+}
+
+export async function markNotificationsRead(uid: string): Promise<void> {
+  const snap = await getDocs(
+    query(collection(db, "notifications", uid, "items"), where("read", "==", false))
+  );
+  if (snap.empty) return;
+  const batch = writeBatch(db);
+  for (const d of snap.docs) batch.update(d.ref, { read: true });
+  await batch.commit();
+}
+
+export async function deleteNotifications(uid: string): Promise<void> {
+  const snap = await getDocs(collection(db, "notifications", uid, "items"));
+  await deleteRefs(snap.docs.map((d) => d.ref));
 }
