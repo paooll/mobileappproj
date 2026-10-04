@@ -1,0 +1,1 @@
+Reprange is a workout tracker that does one thing: you log a set in two taps, and the rest timer starts itself before you have put the phone down. It estimates your one rep max per lift and draws it against every session since you started. No dashboard to configure first.
