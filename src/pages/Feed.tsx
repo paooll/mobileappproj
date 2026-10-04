@@ -9,7 +9,6 @@ import NotificationBell from "../components/NotificationBell";
 import Sheet from "../components/Sheet";
 import { ChatCircle } from "@phosphor-icons/react";
 import { useToast } from "../components/Toast";
-import PhotoBytes from "../components/PhotoBytes";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
   CHEER_MAX,
@@ -239,42 +238,20 @@ function PostRow({
           Rank up
         </span>
       )}
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em]">
-              {post.authorName}
-            </h3>
-            <span className="label shrink-0 normal-case">{friendlyDate(post.date)}</span>
-          </div>
-          <p className="mt-1 text-[17px] font-bold leading-tight tracking-[-0.02em]">
-            {post.workoutName}
-          </p>
-          <p className="num mt-1 text-[13px] text-[var(--ink-2)]">
-            {post.sets} {post.sets === 1 ? "set" : "sets"}
-            <span className="px-1.5 text-[var(--ink-3)]">·</span>
-            {postVolume(post, unit)}
-          </p>
-        </div>
-        {/* The thumbnail rides on the post document itself, which is the only
-            reason this row costs nothing extra: no second query, and no extra
-            rules call per row of the feed. */}
-        {post.thumb && (
-          <button
-            onClick={() => onOpen(post)}
-            aria-label={`Open ${authorNameOf(post.authorName)}'s post`}
-            className="shrink-0 overflow-hidden rounded-[10px] active:opacity-80"
-            style={{ width: 96, height: 72, background: "var(--fill)" }}
-          >
-            <PhotoBytes
-              bytes={post.thumb}
-              alt=""
-              decorative
-              className="h-full w-full object-cover"
-            />
-          </button>
-        )}
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em]">
+          {post.authorName}
+        </h3>
+        <span className="label shrink-0 normal-case">{friendlyDate(post.date)}</span>
       </div>
+      <p className="mt-1 text-[17px] font-bold leading-tight tracking-[-0.02em]">
+        {post.workoutName}
+      </p>
+      <p className="num mt-1 text-[13px] text-[var(--ink-2)]">
+        {post.sets} {post.sets === 1 ? "set" : "sets"}
+        <span className="px-1.5 text-[var(--ink-3)]">·</span>
+        {postVolume(post, unit)}
+      </p>
       <div className="mt-3 flex items-center gap-2">
         <ReactionRow
           counts={counts}

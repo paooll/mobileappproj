@@ -18,7 +18,6 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { PostPhoto } from "./avatar";
 
 /**
  * The social layer.
@@ -70,12 +69,6 @@ export interface FeedPost {
   notes: Record<string, string>;
   /** Present only when the author shares full detail. */
   detail?: LiftDetail[];
-  /**
-   * A 160px JPEG riding inline so the feed can render the picture without a
-   * second query and without an extra rules call on every row. The full image
-   * is at posts/{postId}/photo and is read only when the post is opened.
-   */
-  thumb?: Uint8Array;
 }
 
 export type PostKind = "session" | "milestone";
@@ -287,18 +280,11 @@ export interface PostDraft {
   kind?: PostKind;
   /** Only sent when the athlete has postDetail set to "full". */
   detail?: LiftDetail[];
-  /**
-   * Resized pair from the athlete's chosen picture. The thumbnail rides on the
-   * post itself; the full image cannot, because 25 of them would be megabytes
-   * on every feed load, so it is written to posts/{postId}/photo afterwards.
-   */
-  photo?: PostPhoto;
 }
 
 export async function createPost(draft: PostDraft): Promise<string> {
-  const { photo, ...rest } = draft;
   const ref = await addDoc(collection(db, "posts"), {
-    ...rest,
+    ...draft,
     authorName: authorNameOf(draft.authorName),
     volumeKg: Math.round(draft.volumeKg),
     createdAt: Date.now(),
@@ -306,37 +292,8 @@ export async function createPost(draft: PostDraft): Promise<string> {
     kind: draft.kind ?? "session",
     commentCount: 0,
     notes: {},
-    // Absent rather than empty when there is no picture, so a post without one
-    // costs the feed nothing at all.
-    ...(photo ? { thumb: photo.thumb } : {}),
   });
   return ref.id;
-}
-
-/**
- * The full image, in its own document under the post.
- *
- * It is written after the post rather than in the same call because it needs
- * the post id, and it is a separate document because Firestore caps a document
- * at 1 MiB and the feed reads 25 posts at a time. A failure here leaves the
- * post standing with its thumbnail: the session is still shared, the full
- * picture just never arrives, which the reader is shown as a quiet retry
- * rather than as an error.
- */
-export async function attachPostPhoto(postId: string, full: Uint8Array): Promise<void> {
-  await setDoc(doc(db, "posts", postId, "photo"), { bytes: full });
-}
-
-/**
- * Reads the full image, once, when a post is opened. Returns null when there is
- * none: a post can carry a thumbnail and still have no full image, and a post
- * without a thumbnail is never asked at all.
- */
-export async function loadPostPhoto(postId: string): Promise<Uint8Array | null> {
-  const snap = await getDoc(doc(db, "posts", postId, "photo"));
-  if (!snap.exists()) return null;
-  const bytes = snap.data().bytes;
-  return bytes instanceof Uint8Array ? bytes : null;
 }
 
 /**
@@ -434,10 +391,6 @@ async function deleteRefs(refs: DocumentReference[]) {
 }
 
 export async function deletePost(postId: string) {
-  // Firestore does not cascade, so the photo is dropped explicitly. The rules
-  // make it unreadable the moment the post goes, so this is about not leaving
-  // bytes behind on a free tier rather than about privacy.
-  await deleteDoc(doc(db, "posts", postId, "photo")).catch(() => undefined);
   await deleteDoc(doc(db, "posts", postId));
 }
 

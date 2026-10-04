@@ -5,7 +5,6 @@ import {
   COMMENT_MAX,
   addComment,
   authorNameOf,
-  loadPostPhoto,
   notifyMention,
   parseMentions,
   postVolume,
@@ -13,7 +12,6 @@ import {
   type FeedPost,
   type PostComment,
 } from "../lib/social";
-import PhotoBytes from "./PhotoBytes";
 import { friendlyDate } from "../lib/progress";
 import { useUnit } from "../lib/units";
 
@@ -39,40 +37,6 @@ export default function PostSheet({ post, uid, myName, mentionable, onClose }: P
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
-
-  // The full image is read here and nowhere else. The feed renders from the
-  // thumbnail on the post document precisely so that opening nothing costs
-  // nothing, and opening a post costs exactly one read.
-  //
-  // The page mounts this only while a post is open, so the initial state is
-  // already right for this post and needs no resetting. A retry sets its own
-  // state from the tap rather than from the effect that follows it.
-  const [full, setFull] = useState<Uint8Array | null>(null);
-  const [photoState, setPhotoState] = useState<"loading" | "done" | "failed">(() =>
-    post.thumb ? "loading" : "done"
-  );
-  const [photoAttempt, setPhotoAttempt] = useState(0);
-
-  useEffect(() => {
-    // A post without a thumbnail never had a full image, so nothing is asked.
-    if (!post.thumb) return;
-    let cancelled = false;
-    loadPostPhoto(post.id)
-      .then((bytes) => {
-        if (cancelled) return;
-        setFull(bytes);
-        setPhotoState("done");
-      })
-      .catch((err) => {
-        // Losing the full image leaves the thumbnail standing, so this is a
-        // quiet line with a retry rather than an empty frame.
-        console.error(err);
-        if (!cancelled) setPhotoState("failed");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [post.id, post.thumb, photoAttempt]);
 
   const open = post !== null;
 
@@ -131,41 +95,6 @@ export default function PostSheet({ post, uid, myName, mentionable, onClose }: P
           <span className="px-1.5 text-[var(--ink-3)]">·</span>
           {friendlyDate(post.date)}
         </p>
-
-        {post.thumb && (
-          <figure className="mt-3">
-            <div
-              className="overflow-hidden rounded-[14px]"
-              style={{ aspectRatio: "4 / 3", background: "var(--fill)" }}
-            >
-              <PhotoBytes
-                bytes={full ?? post.thumb}
-                alt={`Photo from ${authorNameOf(post.authorName)}`}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            {(photoState === "loading" || photoState === "failed") && (
-              <figcaption className="mt-2 flex items-center justify-between gap-3">
-                <span className="text-[12px] leading-relaxed text-[var(--ink-3)]">
-                  {photoState === "failed"
-                    ? "The full photo didn't load. The small one above is all there is until it does."
-                    : "Loading the full photo"}
-                </span>
-                {photoState === "failed" && (
-                  <button
-                    onClick={() => {
-                      setPhotoState("loading");
-                      setPhotoAttempt((n) => n + 1);
-                    }}
-                    className="btn-quiet min-h-[44px] shrink-0"
-                  >
-                    Try again
-                  </button>
-                )}
-              </figcaption>
-            )}
-          </figure>
-        )}
 
         {post.detail && post.detail.length > 0 && (
           <ul className="panel mt-3 divide-y divide-[var(--line)]">

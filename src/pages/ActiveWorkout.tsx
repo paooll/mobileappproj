@@ -23,8 +23,7 @@ import {
   type RecentArchive,
 } from "../lib/coach";
 import { clampReps, loadStep, quickReps, snapWeight } from "../lib/setEntry";
-import { attachPostPhoto, createMilestone, createPost } from "../lib/social";
-import type { PostPhoto } from "../lib/avatar";
+import { createMilestone, createPost } from "../lib/social";
 import { rankUpsFor } from "../lib/ranks";
 import { setHapticsEnabled, tick } from "../lib/haptics";
 import type { UserProfile } from "../lib/profile";
@@ -33,7 +32,6 @@ import { useToast } from "../components/Toast";
 import { useRestTimer } from "../hooks/useRestTimer";
 import { DEFAULT_REST, formatRest, loadRestSettings, type RestSettings } from "../lib/restTimer";
 import CoachHint from "../components/CoachHint";
-import PostPhotoPicker from "../components/PostPhotoPicker";
 import RepeatSet from "../components/RepeatSet";
 import Stepper from "../components/Stepper";
 import RestTimerStrip from "../components/RestTimer";
@@ -75,10 +73,6 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   // Keyed by uid so a sign-out or account switch shows the loading state again
   const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
   const [coachHidden, setCoachHidden] = useState(false);
-  // The picture goes on the post, so it is chosen here and carried through
-  // finish. Nothing is written until the post exists, because the full image
-  // lives under the post id.
-  const [photo, setPhoto] = useState<PostPhoto | null>(null);
   // The athlete can turn the coach off for good, not just this session
   const coachOff = coachHidden || !profile.coach;
   const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
@@ -345,7 +339,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
     }));
     const crossed = rankUpsFor(history, [...history, ...sets]);
     try {
-      const postId = await createPost({
+      await createPost({
         authorUid: user?.uid ?? "",
         authorName: profile.displayName,
         workoutName: workout?.name ?? "Workout",
@@ -356,15 +350,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
         // The rules check the same preference, so this is a courtesy to the
         // reader rather than the thing that keeps the weights private.
         ...(profile.postDetail === "full" ? { detail } : {}),
-        ...(photo ? { photo } : {}),
       });
-      if (photo) {
-        // After the post, never before it: the full image lives at
-        // posts/{postId}/photo and needs that id. A failure here leaves a post
-        // with a working thumbnail and no full image, which is a worse picture
-        // rather than a lost session, so it is swallowed on purpose.
-        await attachPostPhoto(postId, photo.full).catch((err) => console.error(err));
-      }
     } catch (err) {
       console.error(err);
     }
@@ -489,11 +475,6 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
           </p>
         </div>
       )}
-
-      {/* The picture is offered on the session itself rather than in a prompt
-          afterwards, because the rules cannot accept one once the post is
-          written. Nothing here blocks finishing without it. */}
-      {!readOnly && <PostPhotoPicker photo={photo} onChange={setPhoto} />}
 
       {/* Sticky logging bar, with the rest clock stacked above it. A finished
           session has nothing to log, so the bar is not rendered at all. */}

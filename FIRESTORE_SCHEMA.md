@@ -153,7 +153,6 @@ ever leaves the account.
 | `commentCount`| number            | denormalised thread size, 0 at post time |
 | `kind`        | string            | `session`, or `milestone` when the app posted a rank crossing |
 | `detail`      | {name,weight,reps}[] | every set, only when the athlete's `postDetail` is `full` |
-| `thumb`       | bytes             | optional 160px JPEG of the athlete's photo for this session, capped at 24 KB |
 
 `detail` is the athlete's own choice and it lives on their profile as
 `postDetail` (`summary` or `full`, defaulting to `summary`). The create rule
@@ -171,19 +170,6 @@ smaller lie than a count that drops to a wrong number.
 
 Milestones are ordinary posts with a different `kind`, which is why they cost
 the feed query nothing extra and render as their own card.
-
-`thumb` rides on the post itself, and that is the only reason a feed can render
-a picture without opening anything else. It is small on purpose: the feed reads
-25 posts at once, so every byte here is paid on every feed load. The full image
-lives at `posts/{postId}/photo` and is read once, when the post is opened.
-Cloud Storage is unavailable on the free plan, which is why both are bytes in
-Firestore rather than URLs, and why Firestore's 1 MiB document ceiling is the
-real limit on the size of a picture this app can store.
-
-A post without a picture has no `thumb` field at all rather than an empty one.
-The create rule allows the key, caps it at 24 KB, and refuses any other shape,
-and the update rule does not list it, so a picture cannot be swapped after the
-fact by the author or by anyone else.
 
 ### `posts/{postId}/comments/{commentId}`
 
@@ -210,33 +196,6 @@ evaluation is allowed.
 
 A comment is never editable once written, only deletable, and only by whoever
 wrote it or by the owner of the post.
-
-### `posts/{postId}/photo`
-
-The full-size picture behind a post, at most one per post.
-
-| Field   | Type  | Description                          |
-| ------- | ----- | ------------------------------------ |
-| `bytes` | bytes | a 1024px JPEG, resized in the browser |
-
-A picture is chosen deliberately on the workout, before the post is written,
-because the thumbnail can only be set on create. Both resolutions are produced
-by one resize in the browser and then written: the thumbnail onto the post
-itself, and this one afterwards, because it needs the post id.
-
-Read access is exactly the post's own, answered by the same `canSeePost` the
-post rule and the comment rule use: one `get()` on the parent, plus one
-`exists()` for the follow when the reader does not own the post. That is two
-document access calls against the ten an evaluation allows, and it is spent
-only on a post somebody deliberately opened, never per row of a feed. It is
-written separately rather than inline because the feed reads 25 posts at a
-time and 25 full images would be megabytes on every load.
-
-Creating and deleting are the post author's own, and there is no update rule at
-all, so the same document can never be written twice. Bytes are capped at
-900 KB, under Firestore's 1 MiB ceiling. Deleting a post drops this document
-too: Firestore does not cascade, and the rules make it unreadable the moment
-the parent is gone either way.
 
 ### `notifications/{uid}/items/{itemId}`
 
