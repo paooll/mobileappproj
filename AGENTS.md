@@ -61,6 +61,13 @@ They target stacks this project does not use: `write-swift`, `animate-expo`,
 project has its own `Toast`). `claude-mem` and `superpowers` are reference-only
 here — see their SKILL.md.
 
+`brag-slim` is vendored from https://github.com/latent-spaces/brag (MIT, at
+`cb89b9f`). It makes a short launch video from a project directory or a URL,
+and is not part of building or changing the app: reach for it only when
+someone asks for a video. The full `/brag` skill is deliberately not vendored,
+because its bundled music and example assets would add megabytes of binaries
+to a repository that carries none.
+
 ## This project
 
 Reprange — mobile-first workout tracker PWA. Vite 8, React 19, TypeScript ~6.0,
