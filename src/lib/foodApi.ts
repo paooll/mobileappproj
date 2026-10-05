@@ -22,7 +22,7 @@ import type { Macros } from "./nutrition";
  */
 export const OFF_CREDIT = "Food data from Open Food Facts";
 
-const ENDPOINT = "https://world.openfoodfacts.org/cgi/search.pl";
+const ENDPOINT = "https://search.openfoodfacts.org/search";
 const PAGE_SIZE = 20;
 
 export interface FoodHit {
@@ -36,7 +36,8 @@ export interface FoodHit {
 interface OffProduct {
   code?: string;
   product_name?: string;
-  brands?: string;
+  /** The search service returns brands as a list; the product API returns a string. */
+  brands?: string | string[];
   nutriments?: Record<string, number | string | undefined>;
 }
 
@@ -75,10 +76,11 @@ function toHit(p: OffProduct): FoodHit | null {
   const macros = per100Of(p.nutriments);
   // A product with no macros at all is not useful to log, so it is not offered.
   if (macros.protein + macros.carbs + macros.fat === 0) return null;
+  const rawBrand = Array.isArray(p.brands) ? (p.brands[0] ?? "") : (p.brands ?? "");
   return {
     id: idFor(p),
     label,
-    brand: (p.brands ?? "").split(",")[0]?.trim() ?? "",
+    brand: rawBrand.split(",")[0]?.trim() ?? "",
     per100: macros,
   };
 }
@@ -93,7 +95,15 @@ export async function cacheFoods(uid: string, hits: FoodHit[]): Promise<void> {
     hits.map((hit) =>
       setDoc(
         doc(foodsFor(uid), hit.id),
-        { label: hit.label, brand: hit.brand, per100: hit.per100 },
+        {
+          label: hit.label,
+          // Lowercased copy, because the cache is queried with a range on it and
+          // uppercase sorts before lowercase: querying `label` for "chicken"
+          // can never match a cached "Chicken Breast".
+          labelLower: hit.label.toLowerCase(),
+          brand: hit.brand,
+          per100: hit.per100,
+        },
         { merge: true },
       ),
     ),
@@ -101,8 +111,14 @@ export async function cacheFoods(uid: string, hits: FoodHit[]): Promise<void> {
 }
 
 async function cachedFoods(uid: string, term: string): Promise<FoodHit[]> {
+  const lower = term.toLowerCase();
   const snap = await getDocs(
-    query(foodsFor(uid), where("label", ">=", term), where("label", "<=", `${term}\uf8ff`), limit(PAGE_SIZE)),
+    query(
+      foodsFor(uid),
+      where("labelLower", ">=", lower),
+      where("labelLower", "<=", `${lower}\uf8ff`),
+      limit(PAGE_SIZE),
+    ),
   );
   return snap.docs.map((d) => {
     const data = d.data() as { label: string; brand: string; per100: Macros };
@@ -110,19 +126,37 @@ async function cachedFoods(uid: string, term: string): Promise<FoodHit[]> {
   });
 }
 
+/** Open Food Facts fails intermittently with a 503, so a single try is not enough. */
+const RETRY_DELAYS_MS = [400, 1000];
+
 async function remoteFoods(term: string, signal: AbortSignal): Promise<FoodHit[]> {
   const url = new URL(ENDPOINT);
-  url.searchParams.set("search_terms", term);
-  url.searchParams.set("search_simple", "1");
-  url.searchParams.set("action", "process");
-  url.searchParams.set("json", "1");
+  url.searchParams.set("q", term);
   url.searchParams.set("page_size", String(PAGE_SIZE));
   url.searchParams.set("fields", "code,product_name,brands,nutriments");
 
-  const res = await fetch(url.toString(), { signal, headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`Open Food Facts returned ${res.status}`);
-  const body = (await res.json()) as { products?: OffProduct[] };
-  return (body.products ?? []).map(toHit).filter((h): h is FoodHit => h !== null);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    }
+    try {
+      const res = await fetch(url.toString(), { signal, headers: { Accept: "application/json" } });
+      // 4xx is our fault and will not fix itself; 5xx is theirs and usually will.
+      if (res.status >= 500) {
+        lastError = new Error(`Open Food Facts returned ${res.status}`);
+        continue;
+      }
+      if (!res.ok) throw new Error(`Open Food Facts returned ${res.status}`);
+      const body = (await res.json()) as { hits?: OffProduct[] };
+      return (body.hits ?? []).map(toHit).filter((h): h is FoodHit => h !== null);
+    } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error("Open Food Facts did not respond");
 }
 
 /**

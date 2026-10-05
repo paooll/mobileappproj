@@ -96,13 +96,60 @@ The verify scripts live in `/tmp` on purpose: this project has no test runner an
 not getting one, so they are throwaway checks that proved a claim and left nothing
 behind.
 
+## Found after deploy: Open Food Facts is flaky, and my code gave up too easily
+
+Reported live as "Search is unavailable right now" on every search. The cause was
+not my endpoint and not CORS:
+
+- `world.openfoodfacts.org/cgi/search.pl` (the legacy endpoint) returned **503,
+  "Page temporarily unavailable"**, repeatedly.
+- The v2 endpoint returned **503, 503, then 200** for the same request. The site
+  root was 200 throughout and `access-control-allow-origin: *` was present.
+- So the service is intermittently unavailable, and a single failed request was
+  turning that into a permanently broken search box.
+
+Three changes followed, and then a fourth found while verifying the first:
+
+1. **Moved off the legacy endpoint**, which returns 503. The first move was to
+   `api/v2/search`, and that turned out to be wrong in a way only measurement
+   caught: `product_name` is **not** a text filter there. It returned
+   `count: 4793385` for "chicken" (essentially the whole database) and a hit
+   called "Fromage Blanc Nature". **The endpoint was correct; the parameter was
+   not.** It is now the dedicated search service,
+   `search.openfoodfacts.org/search?q=`, which returns `{ hits: [...] }` rather
+   than `{ products: [...] }` and `brands` as an array rather than a string. Both
+   shape differences are handled.
+2. **Retry on 5xx**, three attempts at 0ms / 400ms / 1000ms. A 4xx still fails
+   immediately, because that one is our fault and will not fix itself.
+3. **Fixed a cache bug the outage exposed.** The cache was queried with a range
+   on `label` using the raw typed term. Uppercase sorts before lowercase in
+   ASCII, so `where("label", ">=", "chicken")` can never match a cached
+   "Chicken Breast". The cache therefore almost never hit, which meant nearly
+   every search went to the network, which is exactly the path that was down.
+   Cached documents now carry a `labelLower` field and the range query uses it.
+4. **Verified relevance, not just that it responded.** The live check asserts
+   that results contain the search term, that a nonsense term returns nothing,
+   that macros parse, that a portion scales, and that the array-shaped brand
+   parses. A search that returns HTTP 200 with unrelated products is still a
+   broken search, and only the relevance assertions catch that.
+
+*Costs if wrong:* the retry adds up to 1.4s of latency in the worst case, on a
+search box that was previously returning nothing at all.
+
 ## Not verified, and it matters
 
 - **Nothing was run in a browser.** No preview was started, no screen was looked at.
 - **No Firestore round trip happened.** Writes, the `onSnapshot` hooks, the rules and
   the query shapes are unproven against a real database.
-- **Open Food Facts was never called.** `foodApi.ts` is written against the documented
-  v2 search response shape, not against a live response.
+- **Open Food Facts is now called and verified end to end against the live service**:
+  "chicken breast" returns 20 relevant hits led by "Chicken breast hot&spicy" at
+  17 g protein per 100 g, a 150 g portion scales, the array-shaped brand parses,
+  and "zzzznotafoodxyz" returns 0 hits rather than everything. The **retry branch
+  itself was not observed firing** — the API happened to answer when the check
+  ran, so only the success path is proven against a live 503.
+- **The per-athlete cache has still never been read or written**, because the
+  verification ran without a signed-in uid. The `labelLower` fix is therefore
+  reasoned from Firestore's ordering rules, not observed.
 - **Review Focus 1 to 5 are unproven in a browser.** Unit independence, the missing
   bodyweight card, the 20-meal cap, the offline search path and template immutability
   all have unit coverage where it was possible and none of them have been seen.
