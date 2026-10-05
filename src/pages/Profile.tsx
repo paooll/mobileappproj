@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   FloppyDisk,
   GoogleLogo,
+  X,
 } from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
 import Switch from "../components/Switch";
@@ -32,7 +33,9 @@ import {
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
-import { formatVolume, toDisplay, useUnit, type Unit } from "../lib/units";
+import { formatVolume, toDisplay, fromDisplay, useUnit, type Unit } from "../lib/units";
+import { useFoodUnit, type FoodUnit } from "../lib/foodUnits";
+import { proteinTargetFor, proteinTargetOverride } from "../lib/nutrition";
 import {
   DEFAULT_REST,
   REST_PRESETS,
@@ -130,8 +133,12 @@ export default function Profile({ profile }: { profile: UserProfile }) {
   const { toast } = useToast();
   const reduce = useReducedMotion();
   const [unit, setUnit] = useUnit();
+  const [foodUnit, setFoodUnit] = useFoodUnit();
 
   const [prefs, setPrefs] = useState<UserProfile>(profile);
+  // The worked-out target, so the field can show it as a placeholder and the
+  // hint can say where the number came from.
+  const computedTarget = proteinTargetFor(prefs.bodyweightKg ?? null, prefs.goal);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [setsByWorkout, setSetsByWorkout] = useState<Map<string, WorkoutSet[]>>(
     new Map()
@@ -639,6 +646,98 @@ export default function Profile({ profile }: { profile: UserProfile }) {
               value={prefs.roundTo}
               onChange={(roundTo) => updatePref({ roundTo })}
             />
+          </SettingBlock>
+
+          <SettingBlock
+            label="Your weight"
+            hint={
+              computedTarget === null
+                ? "Used only to work out a protein target."
+                : `Works out to ${computedTarget} g a day for your goal.`
+            }
+          >
+            <div className="flex items-center gap-2">
+              <input
+                inputMode="decimal"
+                aria-label="Your weight"
+                placeholder={unit === "lb" ? "165" : "75"}
+                value={
+                  prefs.bodyweightKg === null || prefs.bodyweightKg === undefined
+                    ? ""
+                    : String(toDisplay(prefs.bodyweightKg, unit)).replace(/\.0$/, "")
+                }
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw === "") {
+                    updatePref({ bodyweightKg: null });
+                    return;
+                  }
+                  const n = Number(raw);
+                  updatePref({
+                    bodyweightKg: Number.isFinite(n) && n > 0 ? fromDisplay(n, unit) : null,
+                  });
+                }}
+                className="h-11 min-w-0 flex-1 rounded-xl px-3 text-[16px] font-semibold outline-none"
+                style={{ background: "var(--fill)", border: "1px solid var(--line)" }}
+              />
+              <span className="text-[15px] font-semibold text-[var(--ink-2)]">{unit}</span>
+            </div>
+          </SettingBlock>
+
+          <SettingBlock
+            label="Food unit"
+            hint="How meals and macros are shown. Weights above are unaffected."
+          >
+            <SegmentedControl<FoodUnit>
+              label="Food unit"
+              options={[
+                { value: "g", label: "Grams" },
+                { value: "oz", label: "Ounces" },
+              ]}
+              value={foodUnit}
+              onChange={setFoodUnit}
+            />
+          </SettingBlock>
+
+          <SettingBlock
+            label="Protein target"
+            hint={
+              prefs.proteinTargetG === null || prefs.proteinTargetG === undefined
+                ? "Worked out from your weight and goal. Set your own to override it."
+                : "Your own number. Clear it to go back to the worked-out one."
+            }
+          >
+            <div className="flex items-center gap-2">
+              <input
+                inputMode="numeric"
+                aria-label="Protein target"
+                placeholder={computedTarget === null ? "No target" : String(computedTarget)}
+                value={prefs.proteinTargetG ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw === "") {
+                    updatePref({ proteinTargetG: null });
+                    return;
+                  }
+                  const n = Number(raw);
+                  updatePref({
+                    proteinTargetG: Number.isFinite(n) && n > 0 ? proteinTargetOverride(n) : null,
+                  });
+                }}
+                className="h-11 min-w-0 flex-1 rounded-xl px-3 text-[16px] font-semibold outline-none"
+                style={{ background: "var(--fill)", border: "1px solid var(--line)" }}
+              />
+              <span className="text-[15px] font-semibold text-[var(--ink-2)]">g</span>
+              {prefs.proteinTargetG !== null && prefs.proteinTargetG !== undefined && (
+                <button
+                  onClick={() => updatePref({ proteinTargetG: null })}
+                  aria-label="Clear the protein target"
+                  className="tab h-11 w-11 shrink-0 rounded-full text-[var(--ink-3)]"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
           </SettingBlock>
 
           <SettingRow

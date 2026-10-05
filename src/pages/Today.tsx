@@ -15,6 +15,7 @@ import {
 } from "../lib/data";
 import { useAuthUser } from "../hooks/useAuthUser";
 import ThemeToggle from "../components/ThemeToggle";
+import NutritionCard from "../components/NutritionCard";
 import { useToast } from "../components/Toast";
 import { formatVolume, useUnit } from "../lib/units";
 import { friendlyDate } from "../lib/progress";
@@ -405,6 +406,8 @@ export default function Today({ profile }: { profile: UserProfile }) {
           </p>
         </div>
       )}
+
+      <NutritionCard profile={profile} />
 
       {stats && stats.totalWorkouts > 0 && (
         <div className="panel mt-3 px-4">

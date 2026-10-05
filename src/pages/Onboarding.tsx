@@ -16,7 +16,7 @@ import {
   type Goal,
   type UserPrefs,
 } from "../lib/profile";
-import { useUnit } from "../lib/units";
+import { useUnit, toDisplay, fromDisplay } from "../lib/units";
 
 const DAYS = [2, 3, 4, 5, 6];
 
@@ -34,6 +34,9 @@ export default function Onboarding() {
   const [goal, setGoal] = useState<Goal | null>(null);
   const [days, setDays] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<string[]>([]);
+  // Body mass, in kilograms. Optional on purpose: setup must stay finishable
+  // without it, and the protein target simply stays off until it exists.
+  const [bodyweightKg, setBodyweightKg] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   // Edit mode, reached from Profile. Setup starts with the answers already given.
   const [editing, setEditing] = useState(false);
@@ -51,6 +54,7 @@ export default function Onboarding() {
       setGoal(p.goal);
       setDays(p.daysPerWeek);
       setEquipment(p.equipment);
+      setBodyweightKg(p.bodyweightKg);
       setExisting(pickPrefs(p));
     });
     return () => {
@@ -90,6 +94,7 @@ export default function Onboarding() {
         daysPerWeek: days,
         equipment,
         unit,
+        bodyweightKg,
         ...DEFAULT_PREFS,
         // Preferences already chosen in Settings survive a setup edit
         ...(existing ?? {}),
@@ -280,6 +285,38 @@ export default function Onboarding() {
                       </button>
                     );
                   })}
+                </div>
+
+                <div className="mt-8">
+                  <p className="label mb-2">Your weight</p>
+                  <p className="mb-2 max-w-[38ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+                    Only used to work out a protein target. Leave it empty and the app will not
+                    guess one.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      inputMode="decimal"
+                      aria-label="Your weight"
+                      placeholder={unit === "lb" ? "165" : "75"}
+                      value={
+                        bodyweightKg === null
+                          ? ""
+                          : String(toDisplay(bodyweightKg, unit)).replace(/\.0$/, "")
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value.trim();
+                        if (raw === "") {
+                          setBodyweightKg(null);
+                          return;
+                        }
+                        const n = Number(raw);
+                        setBodyweightKg(Number.isFinite(n) && n > 0 ? fromDisplay(n, unit) : null);
+                      }}
+                      className="h-11 min-w-0 flex-1 rounded-xl px-3 text-[16px] font-semibold outline-none"
+                      style={{ background: "var(--fill)", border: "1px solid var(--line)" }}
+                    />
+                    <span className="text-[15px] font-semibold text-[var(--ink-2)]">{unit}</span>
+                  </div>
                 </div>
 
                 <div className="mt-8">

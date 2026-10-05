@@ -259,6 +259,49 @@ Subcollection: **`sets`**
 | `reps`          | number | rep count              |
 | `order`         | number | position in the workout |
 
+### `users/{uid}/meals/{mealId}`
+
+One logged meal. Private to the athlete; there is no read path for anybody else.
+
+| Field       | Type    | Description                                          |
+| ----------- | ------- | ---------------------------------------------------- |
+| `name`      | string  | what the athlete called it                           |
+| `templateId`| string? | the template it came from, null for a one-off        |
+| `items`     | Item[]  | inline, ordered, capped at 30                        |
+| `macros`    | Macros  | grams, denormalised onto the meal                    |
+| `kcal`      | number  | denormalised, so the day total is one sum            |
+| `loggedAt`  | number  | epoch ms                                             |
+
+Each item is `{ label: string, grams: number, macros: Macros }`.
+
+`macros` and `kcal` are denormalised deliberately: reading the day must never
+cost a read per meal. `templateId` is provenance only, never a link. Items are
+copied into the meal at write time, so editing a template cannot rewrite a meal
+that was already eaten.
+
+`loggedAt` is an epoch number rather than the `YYYY-MM-DD` string that
+`workouts.date` uses. Today's query is a range filter and an orderBy on the same
+field, which Firestore serves from automatic single-field indexes, so
+`firestore.indexes.json` does not change. A `day` string plus an orderBy on a
+different field would need a composite index.
+
+### `users/{uid}/templates/{templateId}`
+
+The same shape as a meal minus `loggedAt` and `templateId`, plus `createdAt`
+(epoch ms). Logging one is a single write that copies its items into a new meal,
+which is what makes a repeatable meal fast: no search, no arithmetic, no network.
+
+### `users/{uid}/foods/{foodId}`
+
+The athlete's own cache of foods they have looked up, mirroring `exercises` in
+shape but **not** shared. `exercises` is data the app ships, so any client may
+write it; food data comes from a third-party API, so a shared collection would
+let one client write wrong macros into everybody's search results. A few
+kilobytes per food per athlete, once.
+
+Macros are stored in grams. The athlete's food unit is grams or ounces and
+affects display and input only, so switching it never rewrites what is stored.
+
 ### `exercises`
 
 Shared, read-only catalog seeded automatically on first authenticated load.

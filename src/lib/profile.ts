@@ -45,6 +45,12 @@ export interface UserPrefs {
   digestDay: number;
   /** Name shown instead of the email address where there is room. */
   displayName: string;
+  /**
+   * The athlete's own protein target in grams. Null until they set one, in
+   * which case the target is computed from bodyweight and goal instead. This is
+   * an override, never a second source of truth.
+   */
+  proteinTargetG: number | null;
 }
 
 export interface UserProfile extends UserPrefs {
@@ -65,6 +71,13 @@ export interface UserProfile extends UserPrefs {
    */
   email: string;
   onboardedAt: unknown;
+  /**
+   * Body mass in kilograms, null until the athlete gives one. It is not an
+   * onboarding answer, so it can arrive long after setup, and the protein
+   * target simply stays off until it does. Stored in kilograms like every other
+   * weight in the app; the lifting unit only affects what is displayed.
+   */
+  bodyweightKg: number | null;
 }
 
 /** Whole hours east of UTC on this device, e.g. -5 in New York, +13 in Auckland. */
@@ -82,6 +95,7 @@ export const DEFAULT_PREFS: UserPrefs = {
   postDetail: "summary",
   digestDay: 1,
   displayName: "",
+  proteinTargetG: null,
 };
 
 export const EXPERIENCE_OPTIONS: { value: Experience; label: string; hint: string }[] = [
@@ -181,6 +195,12 @@ export async function loadProfile(uid: string): Promise<UserProfile | null> {
         ? Math.round(d.digestDay)
         : DEFAULT_PREFS.digestDay,
     displayName: typeof d.displayName === "string" ? d.displayName : "",
+    proteinTargetG:
+      typeof d.proteinTargetG === "number" && d.proteinTargetG > 0
+        ? d.proteinTargetG
+        : null,
+    bodyweightKg:
+      typeof d.bodyweightKg === "number" && d.bodyweightKg > 0 ? d.bodyweightKg : null,
   };
   primeProfileCache(uid, profile);
   return profile;
@@ -207,6 +227,7 @@ export function pickPrefs(profile: UserProfile): UserPrefs {
     postDetail: profile.postDetail,
     digestDay: profile.digestDay,
     displayName: profile.displayName,
+    proteinTargetG: profile.proteinTargetG,
   };
 }
 

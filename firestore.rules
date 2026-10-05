@@ -65,6 +65,28 @@ service cloud.firestore {
       allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
     }
 
+    // Nutrition: meals logged, repeatable meals saved from them, and the
+    // athlete's own cache of foods they have looked up. All private. There is
+    // no sharing path for a meal, so no rule below reads anything but the
+    // owner.
+    //
+    // The food cache is deliberately per-athlete rather than one shared
+    // collection like `exercises`. That catalog is data this app ships, so any
+    // client may write it. Food data comes from a third-party API and is cached
+    // per athlete, so a shared collection would let one client write wrong
+    // macros into everybody's search results.
+    match /users/{uid}/meals/{mealId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/templates/{templateId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/foods/{foodId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+    }
+
     // ---------- Social ----------
     //
     // Following is one-directional and revocable, and a shared summary only
