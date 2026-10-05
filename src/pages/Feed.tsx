@@ -19,6 +19,7 @@ import {
   declineFollow,
   findByHandle,
   gaveReaction,
+  loadNamesFor,
   postVolume,
   requestFollow,
   subscribeFeed,
@@ -41,11 +42,13 @@ import type { UserProfile } from "../lib/profile";
 function Requests({
   rows,
   busyId,
+  nameOf,
   onAccept,
   onDecline,
 }: {
   rows: FollowRequest[];
   busyId: string | null;
+  nameOf: (uid: string, fallback: string) => string;
   onAccept: (row: FollowRequest) => void;
   onDecline: (row: FollowRequest) => void;
 }) {
@@ -57,7 +60,9 @@ function Requests({
         {rows.map((r) => (
           <div key={r.id} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-medium">{r.followerName}</p>
+              <p className="truncate text-[15px] font-medium">
+                {nameOf(r.followerUid, r.followerName)}
+              </p>
               <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
                 Sees the name, sets and volume of what you finish.
               </p>
@@ -65,7 +70,7 @@ function Requests({
             <button
               onClick={() => onDecline(r)}
               disabled={busyId === r.id}
-              aria-label={`Ignore ${r.followerName}`}
+              aria-label={`Ignore ${nameOf(r.followerUid, r.followerName)}`}
               className="icon-btn h-11 w-11 shrink-0 text-[var(--ink-3)]"
             >
               <X size={17} />
@@ -358,15 +363,21 @@ export default function Feed({ profile }: { profile: UserProfile }) {
   const [asked, setAsked] = useState<string[]>([]);
   const [openPost, setOpenPost] = useState<FeedPost | null>(null);
   const [cheering, setCheering] = useState<{ post: FeedPost; key: ReactionKey } | null>(null);
+  // Declared here because the mention list below reads it, and a hook cannot be
+  // used before it exists.
+  const [liveNames, setLiveNames] = useState<Map<string, string>>(() => new Map());
 
   // Whoever can be named in a comment: the athlete plus everybody they follow.
   // The Feed already has the follow list in memory, so a mention costs no read.
   const mentionable = useMemo(
     () => [
       { uid, name: myName },
-      ...(following ?? []).map((f) => ({ uid: f.followeeUid, name: f.followeeName })),
+      ...(following ?? []).map((f) => ({
+        uid: f.followeeUid,
+        name: liveNames.get(f.followeeUid) ?? authorNameOf(f.followeeName),
+      })),
     ],
-    [uid, myName, following]
+    [uid, myName, following, liveNames]
   );
 
   const rise = reduce
@@ -400,6 +411,46 @@ export default function Feed({ profile }: { profile: UserProfile }) {
     return subscribeFollowing(user.uid, setFollowing);
   }, [user]);
 
+  // Every edge carries a copy of the name from the day it was made, so the copy
+  // goes stale the moment somebody renames. One query resolves the current
+  // names for the whole list; the copies stay as the fallback for an account
+  // whose handle has not been written yet.
+  // Keyed on the uids themselves, not on the arrays. onSnapshot hands back a
+  // fresh array on every delivery, so depending on those would re-query the
+  // handles collection each time a post arrived, which is precisely the read
+  // spend this page already struggles to justify.
+  const namesKey = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...(following ?? []).map((f) => f.followeeUid),
+          ...(following ?? []).map((f) => f.followerUid),
+          ...requests.map((r) => r.followerUid),
+        ])
+      )
+        .filter(Boolean)
+        .sort()
+        .join(","),
+    [following, requests]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    if (!namesKey) return;
+    loadNamesFor(namesKey.split(","))
+      .then((names) => {
+        if (!cancelled) setLiveNames(names);
+      })
+      .catch((err) => console.error("Could not resolve names:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [namesKey]);
+
+  const nameOf = useCallback(
+    (uid: string, fallback: string) => liveNames.get(uid) ?? authorNameOf(fallback),
+    [liveNames]
+  );
+
   // The feed cannot be asked for until the follow list has arrived, otherwise
   // the first query would run against nobody and show an empty page for good.
   const followeeKey = (following ?? []).map((f) => f.followeeUid).join(",");
@@ -415,7 +466,7 @@ export default function Feed({ profile }: { profile: UserProfile }) {
     try {
       if (accept) {
         await acceptFollow(row);
-        toast(`${row.followerName} can see your sessions now.`, "success");
+        toast(`${nameOf(row.followerUid, row.followerName)} can see your sessions now.`, "success");
       } else {
         await declineFollow(row.id);
       }
@@ -485,7 +536,7 @@ export default function Feed({ profile }: { profile: UserProfile }) {
     setLeavingBusy(true);
     try {
       await unfollow(leaving.id);
-      toast(`You stopped following ${leaving.followeeName}.`, "info");
+      toast(`You stopped following ${nameOf(leaving.followeeUid, leaving.followeeName)}.`, "info");
       setLeaving(null);
     } catch (err) {
       console.error(err);
@@ -496,13 +547,15 @@ export default function Feed({ profile }: { profile: UserProfile }) {
   };
 
   const follows = following ?? [];
-  const followNames = new Set(follows.map((f) => f.followeeName));
+  // Both sets are keyed on the name actually shown, so a rename does not leave
+  // a row that reads "waiting" beside the same person under two names.
+  const followNames = new Set(follows.map((f) => nameOf(f.followeeUid, f.followeeName)));
   // An ask stops being pending the moment it is accepted or declined, so a name
   // from this session is only still waiting if Firestore has not moved it into
   // either list yet. Without that check it would sit there saying "waiting"
   // after the very request it referred to had been answered.
   const askedNames = new Set<string>([
-    ...requestsSent.map((r) => r.followeeName),
+    ...requestsSent.map((r) => nameOf(r.followeeUid, r.followeeName)),
     ...asked.filter((n) => !followNames.has(n)),
   ]);
   const loading = following === null || posts === null;
@@ -527,6 +580,7 @@ export default function Feed({ profile }: { profile: UserProfile }) {
       <Requests
         rows={requests}
         busyId={busyId}
+        nameOf={nameOf}
         onAccept={(r) => answer(r, true)}
         onDecline={(r) => answer(r, false)}
       />
@@ -581,7 +635,9 @@ export default function Feed({ profile }: { profile: UserProfile }) {
             {follows.map((f) => (
               <div key={f.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-medium">{f.followeeName}</p>
+                  <p className="truncate text-[15px] font-medium">
+                    {nameOf(f.followeeUid, f.followeeName)}
+                  </p>
                 </div>
                 <button
                   onClick={() => setLeaving(f)}
@@ -628,7 +684,7 @@ export default function Feed({ profile }: { profile: UserProfile }) {
 
       <ConfirmSheet
         open={leaving !== null}
-        title={`Stop following ${leaving?.followeeName ?? "this person"}?`}
+        title={`Stop following ${leaving ? nameOf(leaving.followeeUid, leaving.followeeName) : "this person"}?`}
         body="Their sessions leave your feed. They keep following you, and you can ask again whenever you like."
         confirmLabel="Unfollow"
         cancelLabel="Stay following"

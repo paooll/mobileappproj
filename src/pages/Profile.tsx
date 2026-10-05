@@ -57,6 +57,7 @@ import {
   type UserProfile,
 } from "../lib/profile";
 import { setHapticsEnabled } from "../lib/haptics";
+import { syncHandle } from "../lib/social";
 import {
   authMethodOf,
   deleteAccount,
@@ -288,6 +289,13 @@ export default function Profile({ profile }: { profile: UserProfile }) {
     setSavingName(true);
     try {
       await updateProfile(user.uid, { displayName: next });
+      // The handle is what other athletes read when they look this account up
+      // by code. It was only ever refreshed when Feed happened to mount, so a
+      // name set here stayed stale until then, and the person searching for it
+      // kept being told "Athlete".
+      await syncHandle(user.uid, next).catch((err) => {
+        console.error("Handle name refresh failed:", err);
+      });
       setPrefs((p) => ({ ...p, displayName: next }));
       setNameDraft(next);
       toast("Name saved.", "success");

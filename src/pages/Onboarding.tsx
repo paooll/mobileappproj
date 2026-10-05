@@ -20,7 +20,7 @@ import { useUnit, toDisplay, fromDisplay } from "../lib/units";
 
 const DAYS = [2, 3, 4, 5, 6];
 
-const STEPS = ["Experience", "Goal", "Schedule", "Setup"] as const;
+const STEPS = ["Name", "Experience", "Goal", "Schedule", "Setup"] as const;
 
 export default function Onboarding() {
   const user = useAuthUser();
@@ -30,6 +30,11 @@ export default function Onboarding() {
   const reduce = useReducedMotion();
 
   const [step, setStep] = useState(0);
+  // Asked for first, because it is the only field the Feed cannot do without.
+  // Everyone else finds this account by a shared code, and a code resolves to a
+  // name: without this, every athlete on the app reads as "Athlete" to the
+  // people they follow. One field, asked once, at the top.
+  const [name, setName] = useState("");
   const [experience, setExperience] = useState<Experience | null>(null);
   const [goal, setGoal] = useState<Goal | null>(null);
   const [days, setDays] = useState<number | null>(null);
@@ -53,6 +58,7 @@ export default function Onboarding() {
       setExperience(p.experience);
       setGoal(p.goal);
       setDays(p.daysPerWeek);
+      setName(p.displayName);
       setEquipment(p.equipment);
       setBodyweightKg(p.bodyweightKg);
       setExisting(pickPrefs(p));
@@ -73,11 +79,12 @@ export default function Onboarding() {
 
   // A step is complete once it has an answer. Equipment and unit always have one.
   const canAdvance = useMemo(() => {
-    if (step === 0) return experience !== null;
-    if (step === 1) return goal !== null;
-    if (step === 2) return days !== null;
+    if (step === 0) return name.trim().length > 0;
+    if (step === 1) return experience !== null;
+    if (step === 2) return goal !== null;
+    if (step === 3) return days !== null;
     return true;
-  }, [step, experience, goal, days]);
+  }, [step, name, experience, goal, days]);
 
   const toggleEquipment = (e: string) =>
     setEquipment((prev) =>
@@ -98,6 +105,9 @@ export default function Onboarding() {
         ...DEFAULT_PREFS,
         // Preferences already chosen in Settings survive a setup edit
         ...(existing ?? {}),
+        // Last, so the answer to the question we just asked always wins over a
+        // prefilled blank. Editing setup must not silently erase a set name.
+        displayName: name.trim().slice(0, 60),
       }, user.email ?? "");
       // A finished cold start belongs in the app, not on the settings screen it
       // just wrote. Editing setup was reached from Profile, so put them back there.
@@ -111,7 +121,7 @@ export default function Onboarding() {
 
   return (
     <div className="flex min-h-[100dvh] flex-col px-5 pt-[max(env(safe-area-inset-top),32px)] pb-[max(env(safe-area-inset-bottom),24px)]">
-      {/* Progress rail — four segments, filled as far as you have got */}
+      {/* Progress rail — one segment per step, filled as far as you have got */}
       <div className="flex items-center gap-2">
         {/* Step 0 has nowhere to go back to, and leaving mid-setup would
             strand the account without a profile, so the control is absent */}
@@ -149,7 +159,37 @@ export default function Onboarding() {
           <motion.div key={step} {...slide}>
             {step === 0 && (
               <>
-                <p className="label">Step 1 of 4</p>
+                <p className="label">Step 1 of 5</p>
+                <h1 className="mt-2 text-[32px] font-bold leading-[1.08] tracking-[-0.025em]">
+                  What should we call you?
+                </h1>
+                <p className="mt-2 max-w-[34ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
+                  This is the name people see next to your sessions and when you share a code.
+                </p>
+                <div className="mt-7">
+                  <input
+                    value={name}
+                    maxLength={60}
+                    autoComplete="nickname"
+                    autoCapitalize="words"
+                    placeholder="e.g. Sam"
+                    aria-label="Your name"
+                    enterKeyHint="next"
+                    onChange={(e) => setName(e.target.value)}
+                    className="field"
+                  />
+                  <p className="mt-2 max-w-[38ch] text-[13px] leading-relaxed text-[var(--ink-2)]">
+                    {name.trim().length === 0
+                      ? "A name is the one thing the app cannot fill in for you. Change it any time in Profile."
+                      : "Change it any time in Profile."}
+                  </p>
+                </div>
+              </>
+            )}
+
+            {step === 1 && (
+              <>
+                <p className="label">Step 2 of 5</p>
                 <h1 className="mt-2 text-[32px] font-bold leading-[1.08] tracking-[-0.025em]">
                   Where are you starting from?
                 </h1>
@@ -187,9 +227,9 @@ export default function Onboarding() {
               </>
             )}
 
-            {step === 1 && (
+            {step === 2 && (
               <>
-                <p className="label">Step 2 of 4</p>
+                <p className="label">Step 3 of 5</p>
                 <h1 className="mt-2 text-[32px] font-bold leading-[1.08] tracking-[-0.025em]">
                   What are you training for?
                 </h1>
@@ -220,9 +260,9 @@ export default function Onboarding() {
               </>
             )}
 
-            {step === 2 && (
+            {step === 3 && (
               <>
-                <p className="label">Step 3 of 4</p>
+                <p className="label">Step 4 of 5</p>
                 <h1 className="mt-2 text-[32px] font-bold leading-[1.08] tracking-[-0.025em]">
                   How many days a week?
                 </h1>
@@ -260,9 +300,9 @@ export default function Onboarding() {
               </>
             )}
 
-            {step === 3 && (
+            {step === 4 && (
               <>
-                <p className="label">Step 4 of 4</p>
+                <p className="label">Step 5 of 5</p>
                 <h1 className="mt-2 text-[32px] font-bold leading-[1.08] tracking-[-0.025em]">
                   What do you train with?
                 </h1>

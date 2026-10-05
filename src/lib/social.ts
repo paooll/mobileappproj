@@ -159,6 +159,38 @@ export async function syncHandle(uid: string, displayName: string): Promise<stri
   throw new Error("no-handle");
 }
 
+/**
+ * Current display names for a set of accounts, read from the handles.
+ *
+ * Every follow and every request carries its own copy of the name, written at
+ * the moment the edge was made. That copy is stale the instant somebody renames
+ * themselves, and nothing ever refreshed it, so the list showed the name an
+ * account had when it was added rather than the name it has now. The handle is
+ * the source of truth, so the list resolves it here instead.
+ *
+ * One query for the whole list, never one per row: a rules check may make at
+ * most ten document access calls, and the feed already spends one per post.
+ */
+export async function loadNamesFor(uids: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unique = Array.from(new Set(uids.filter(Boolean)));
+  // `in` rejects an empty array, and "nobody" is a real answer here: a new
+  // account follows nobody and has no requests, so it asks for zero names.
+  if (unique.length === 0) return names;
+  // `in` takes at most thirty values.
+  for (let i = 0; i < unique.length; i += 30) {
+    const chunk = unique.slice(i, i + 30);
+    const snap = await getDocs(query(collection(db, "handles"), where("uid", "in", chunk)));
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (typeof data.uid === "string") {
+        names.set(data.uid, authorNameOf(typeof data.name === "string" ? data.name : ""));
+      }
+    }
+  }
+  return names;
+}
+
 export interface HandleHit {
   uid: string;
   name: string;
