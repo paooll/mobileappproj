@@ -96,6 +96,38 @@ The verify scripts live in `/tmp` on purpose: this project has no test runner an
 not getting one, so they are throwaway checks that proved a claim and left nothing
 behind.
 
+## The real reason search never worked: Open Food Facts is not callable from a browser
+
+Everything above this section is real work that was still not the cause. The
+cause was found by repeating the CORS check **with an `Origin` header**, which is
+what a browser always sends:
+
+| Endpoint | No `Origin` (curl) | With `Origin` (browser) |
+|---|---|---|
+| `search.openfoodfacts.org/search` | `access-control-allow-origin: *` | **no CORS header at all** |
+| `world.openfoodfacts.org/cgi/search.pl` | 503 | 503 |
+| `world.openfoodfacts.org/api/v2/product/{code}` | `*` | `*` |
+| `api.nal.usda.gov` | `*` | `*` |
+
+The browser blocks the response, `fetch` throws a `TypeError`, my catch turns it
+into "search is unavailable", and every athlete sees a dead search box. No
+amount of retrying, endpoint swapping or cache fixing could ever have fixed it.
+
+**My mistake, stated plainly:** I tested CORS with curl and no `Origin` header,
+saw `*`, and told the athlete CORS was fine. It was not. Testing without `Origin`
+proves nothing about the browser case, and that is the case that matters. Two
+consecutive diagnoses were built on that bad check.
+
+**Switched to USDA FoodData Central**, which sends `*` either way, is public
+domain (so the ODbL attribution obligation disappears), and is a government API
+rather than a volunteer project. It needs a free key, held as `VITE_FDC_API_KEY`
+and baked into the client bundle at build time. That key is readable by anyone
+who opens the page; it is a read-only key for public-domain data and is not a
+secret. Only the public search endpoint is ever called with it.
+
+*Costs if wrong:* a key that ships in the bundle, against a provider with no
+attribution obligation and better uptime.
+
 ## Found after deploy: Open Food Facts is flaky, and my code gave up too easily
 
 Reported live as "Search is unavailable right now" on every search. The cause was

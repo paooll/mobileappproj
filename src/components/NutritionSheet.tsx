@@ -20,7 +20,7 @@ import {
   type MealItem,
   type MealTemplate,
 } from "../lib/nutrition";
-import { OFF_CREDIT, macrosForPortion, searchFoods, type FoodHit } from "../lib/foodApi";
+import { FDC_CREDIT, macrosForPortion, searchFoods, type FoodHit } from "../lib/foodApi";
 
 type Tab = "templates" | "search" | "recent";
 
@@ -289,6 +289,7 @@ function SearchTab({
     term: string;
     hits: FoodHit[];
     offline: boolean;
+    missingKey: boolean;
     searching: boolean;
   } | null>(null);
   const [portion, setPortion] = useState<Record<string, number>>({});
@@ -298,6 +299,7 @@ function SearchTab({
   const shown = result && result.term === term ? result : null;
   const hits = shown?.hits ?? [];
   const offline = shown?.offline ?? false;
+  const missingKey = shown?.missingKey ?? false;
   const searching = shown?.searching ?? false;
 
   useEffect(() => {
@@ -305,10 +307,20 @@ function SearchTab({
     const controller = new AbortController();
     // Debounced, so a search is one request rather than one per keystroke.
     timer.current = window.setTimeout(() => {
-      setResult({ term, hits: [], offline: false, searching: true });
+      setResult({ term, hits: [], offline: false, missingKey: false, searching: true });
       searchFoods(term, uid, controller.signal)
-        .then((r) => setResult({ term, hits: r.hits, offline: r.offline, searching: false }))
-        .catch(() => setResult({ term, hits: [], offline: true, searching: false }));
+        .then((r) =>
+          setResult({
+            term,
+            hits: r.hits,
+            offline: r.offline,
+            missingKey: r.missingKey,
+            searching: false,
+          }),
+        )
+        .catch(() =>
+          setResult({ term, hits: [], offline: true, missingKey: false, searching: false }),
+        );
     }, 300);
     return () => {
       controller.abort();
@@ -336,12 +348,17 @@ function SearchTab({
       </div>
 
       {searching && <p className="mt-3 text-[14px] text-[var(--ink-3)]">Searching…</p>}
+      {missingKey && (
+        <p className="mt-3 text-[14px] leading-relaxed text-[var(--ink-3)]">
+          Food search needs an API key, which is not set. Anything you have saved still logs.
+        </p>
+      )}
       {offline && (
         <p className="mt-3 text-[14px] leading-relaxed text-[var(--ink-3)]">
           Search is unavailable right now. Anything you have saved still logs.
         </p>
       )}
-      {!searching && !offline && text.trim().length >= 2 && hits.length === 0 && (
+      {!searching && !offline && !missingKey && text.trim().length >= 2 && hits.length === 0 && (
         <p className="mt-3 text-[14px] text-[var(--ink-3)]">Nothing matched that.</p>
       )}
 
@@ -411,7 +428,7 @@ function SearchTab({
         })}
       </div>
 
-      <p className="mt-5 text-[12px] text-[var(--ink-3)]">{OFF_CREDIT}</p>
+      <p className="mt-5 text-[12px] text-[var(--ink-3)]">{FDC_CREDIT}</p>
     </div>
   );
 }

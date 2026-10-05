@@ -11,19 +11,31 @@ import { db } from "./firebase";
 import type { Macros } from "./nutrition";
 
 /**
- * Food data from Open Food Facts. There is no API key and no signup, which is
- * the deciding factor: a credential has to live somewhere managed, and this
- * feature does not need one. Results are cached per athlete on first fetch, so
- * a food an athlete has looked up before is served from Firestore and works
- * offline afterwards.
+ * Food data from USDA FoodData Central. Public domain, so there is no
+ * attribution obligation the way Open Food Facts carries one, and the service
+ * is a government API rather than a volunteer project, so it does not go down
+ * the way the Open Food Facts search service does.
  *
- * The data is ODbL, which obliges attribution where it is shown. `OFF_CREDIT`
- * is rendered by the search tab for that reason and not for decoration.
+ * It does need a free key. That key ships in the client bundle, which is a real
+ * cost and worth saying out loud: the data is public and the key is free, but
+ * it is not a secret and must never be treated as one. Only read-only public
+ * search endpoints are ever called with it.
+ *
+ * `api.nal.usda.gov` is one of the few food APIs that actually sends
+ * `access-control-allow-origin: *` when the browser sends an `Origin` header,
+ * which is the entire reason it is used here. See the ledger.
  */
-export const OFF_CREDIT = "Food data from Open Food Facts";
+export const FDC_CREDIT = "Food data from USDA FoodData Central";
 
-const ENDPOINT = "https://search.openfoodfacts.org/search";
+const ENDPOINT = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const PAGE_SIZE = 20;
+
+const API_KEY = import.meta.env.VITE_FDC_API_KEY as string | undefined;
+
+/** True when no key was configured, which is a different problem from a failure. */
+export function isConfigured(): boolean {
+  return typeof API_KEY === "string" && API_KEY.length > 0;
+}
 
 export interface FoodHit {
   id: string;
@@ -33,54 +45,47 @@ export interface FoodHit {
   per100: Macros;
 }
 
-interface OffProduct {
-  code?: string;
-  product_name?: string;
-  /** The search service returns brands as a list; the product API returns a string. */
-  brands?: string | string[];
-  nutriments?: Record<string, number | string | undefined>;
+interface FdcNutrient {
+  nutrientId?: number;
+  value?: number;
+  unitName?: string;
 }
 
-function num(v: unknown): number {
-  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : Number.NaN;
-  return Number.isFinite(n) ? n : 0;
+interface FdcFood {
+  fdcId?: number;
+  description?: string;
+  brandOwner?: string;
+  brandName?: string;
+  foodNutrients?: FdcNutrient[];
 }
 
-/** OFF uses underscores; a product with no macros reads as zero, not as a crash. */
-function per100Of(n: OffProduct["nutriments"]): Macros {
-  return {
-    protein: num(n?.proteins_100g),
-    carbs: num(n?.carbohydrates_100g),
-    fat: num(n?.fat_100g),
-  };
+/** Nutrient ids: 1003 protein, 1004 fat, 1005 carbohydrate. */
+const PROTEIN = 1003;
+const FAT = 1004;
+const CARBS = 1005;
+
+function nutrient(food: FdcFood, id: number): number {
+  const hit = (food.foodNutrients ?? []).find((n) => n.nutrientId === id);
+  // Branded entries can carry the same nutrient more than once, once per
+  // serving and once per 100 g. Only the gram value is per 100 g.
+  if (!hit || hit.unitName !== "G") return 0;
+  return typeof hit.value === "number" && Number.isFinite(hit.value) ? hit.value : 0;
 }
 
-function slug(label: string): string {
-  return (
-    label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 60) || "food"
-  );
-}
-
-/** OFF's product code when there is one, otherwise a stable slug of the name. */
-function idFor(p: OffProduct): string {
-  return p.code ? `off-${p.code}` : `name-${slug(p.product_name ?? "food")}`;
-}
-
-function toHit(p: OffProduct): FoodHit | null {
-  const label = (p.product_name ?? "").trim();
+function toHit(f: FdcFood): FoodHit | null {
+  const label = (f.description ?? "").trim();
   if (!label) return null;
-  const macros = per100Of(p.nutriments);
-  // A product with no macros at all is not useful to log, so it is not offered.
+  const macros: Macros = {
+    protein: nutrient(f, PROTEIN),
+    carbs: nutrient(f, CARBS),
+    fat: nutrient(f, FAT),
+  };
+  // An entry with no macros is not worth logging.
   if (macros.protein + macros.carbs + macros.fat === 0) return null;
-  const rawBrand = Array.isArray(p.brands) ? (p.brands[0] ?? "") : (p.brands ?? "");
   return {
-    id: idFor(p),
+    id: `fdc-${f.fdcId ?? label}`,
     label,
-    brand: rawBrand.split(",")[0]?.trim() ?? "",
+    brand: (f.brandOwner || f.brandName || "").trim(),
     per100: macros,
   };
 }
@@ -126,14 +131,14 @@ async function cachedFoods(uid: string, term: string): Promise<FoodHit[]> {
   });
 }
 
-/** Open Food Facts fails intermittently with a 503, so a single try is not enough. */
+/** Retried because a client should survive one dropped connection. */
 const RETRY_DELAYS_MS = [400, 1000];
 
 async function remoteFoods(term: string, signal: AbortSignal): Promise<FoodHit[]> {
   const url = new URL(ENDPOINT);
-  url.searchParams.set("q", term);
-  url.searchParams.set("page_size", String(PAGE_SIZE));
-  url.searchParams.set("fields", "code,product_name,brands,nutriments");
+  url.searchParams.set("query", term);
+  url.searchParams.set("pageSize", String(PAGE_SIZE));
+  url.searchParams.set("api_key", API_KEY as string);
 
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
@@ -143,25 +148,35 @@ async function remoteFoods(term: string, signal: AbortSignal): Promise<FoodHit[]
     }
     try {
       const res = await fetch(url.toString(), { signal, headers: { Accept: "application/json" } });
-      // 4xx is our fault and will not fix itself; 5xx is theirs and usually will.
-      if (res.status >= 500) {
-        lastError = new Error(`Open Food Facts returned ${res.status}`);
+      // 4xx is ours and will not fix itself, so it leaves the loop rather than
+      // burning the retries. 5xx is theirs and usually will.
+      if (!res.ok && res.status < 500) throw new Error(`Food search returned ${res.status}`);
+      if (!res.ok) {
+        lastError = new Error(`Food search returned ${res.status}`);
         continue;
       }
-      if (!res.ok) throw new Error(`Open Food Facts returned ${res.status}`);
-      const body = (await res.json()) as { hits?: OffProduct[] };
-      return (body.hits ?? []).map(toHit).filter((h): h is FoodHit => h !== null);
+      const body = (await res.json()) as { foods?: FdcFood[] };
+      return (body.foods ?? []).map(toHit).filter((h): h is FoodHit => h !== null);
     } catch (err) {
       if ((err as Error).name === "AbortError") throw err;
       lastError = err;
     }
   }
-  throw lastError ?? new Error("Open Food Facts did not respond");
+  throw lastError ?? new Error("Food search did not respond");
+}
+
+export interface SearchResult {
+  hits: FoodHit[];
+  /** The service could not be reached. */
+  offline: boolean;
+  /** No API key was configured, which is not the same thing as being offline. */
+  missingKey: boolean;
 }
 
 /**
  * Cache first, network second. The cache answers most repeat lookups outright,
- * so the third time somebody searches chicken the network is never involved.
+ * so the third time somebody searches chicken the network is never involved,
+ * and a food logged yesterday still opens with the radio off.
  *
  * A network failure returns whatever the cache had rather than throwing, so a
  * search box that stops working never becomes an error screen.
@@ -170,9 +185,9 @@ export async function searchFoods(
   queryText: string,
   uid: string,
   signal: AbortSignal,
-): Promise<{ hits: FoodHit[]; offline: boolean }> {
+): Promise<SearchResult> {
   const term = queryText.trim();
-  if (term.length < 2) return { hits: [], offline: false };
+  if (term.length < 2) return { hits: [], offline: false, missingKey: false };
 
   let cached: FoodHit[] = [];
   try {
@@ -180,17 +195,19 @@ export async function searchFoods(
   } catch (err) {
     console.error("Food cache read failed:", err);
   }
-  if (cached.length > 0) return { hits: cached, offline: false };
+  if (cached.length > 0) return { hits: cached, offline: false, missingKey: false };
+
+  if (!isConfigured()) return { hits: cached, offline: false, missingKey: true };
 
   try {
     const hits = await remoteFoods(term, signal);
     // Caching must never be the thing that breaks a search that worked.
     cacheFoods(uid, hits).catch((err) => console.error("Food cache write failed:", err));
-    return { hits, offline: false };
+    return { hits, offline: false, missingKey: false };
   } catch (err) {
-    if ((err as Error).name === "AbortError") return { hits: [], offline: false };
+    if ((err as Error).name === "AbortError") return { hits: [], offline: false, missingKey: false };
     console.error("Food search failed:", err);
-    return { hits: cached, offline: true };
+    return { hits: cached, offline: true, missingKey: false };
   }
 }
 

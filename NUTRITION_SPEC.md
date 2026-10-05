@@ -23,7 +23,7 @@ the moment it becomes social.
 | Approach | A, templates first | "Log fast" is the claim, so the network must not be on the daily path |
 | Onboarding | Modified, stays four steps | Bodyweight and the nutrition unit join the existing Setup step |
 | Units | Nutrition units are separate from lifting units | Food is weighed in grams and ounces; plates are in kilograms and pounds |
-| Food data | Open Food Facts | Open data, no API key, no signup, callable from the browser |
+| Food data | USDA FoodData Central | Public domain, government uptime, and it sends CORS headers a browser accepts. Needs a free key, which ships in the bundle. |
 | Photos | None | Removes the 1 MiB Firestore ceiling from the design entirely |
 | Reminders | None scheduled | No Cloud Scheduler on the free plan, so nothing may promise a notification it cannot deliver |
 | Tone | Warmer, same tokens | One new accent in `src/index.css`, used only by the nutrition surfaces |
@@ -154,20 +154,32 @@ indexes. `firestore.indexes.json` does not change.
 
 ## Food search
 
-Open Food Facts, searched by name, debounced 300ms, results cached per athlete
-on first successful fetch.
+USDA FoodData Central, searched by name, debounced 300ms, results cached per
+athlete on first successful fetch.
 
-No API key and no signup, which is the deciding factor: the project is on the
-free plan, and a credential that has to live somewhere managed is a liability
-this feature does not need to carry.
+This replaced an Open Food Facts design that was written here first and did not
+survive contact with a browser. **Open Food Facts' search service cannot be
+called from a browser at all**: it returns `access-control-allow-origin: *` when
+no `Origin` header is sent and no CORS header whatsoever when one is, which
+every browser sends. A `curl` without `Origin` proves nothing. USDA is one of
+the few food APIs that sends `access-control-allow-origin: *` either way, which
+is the reason for the change.
 
-The data is ODbL, so the sheet carries a "data from Open Food Facts" credit and
-it stays on screen where the data is shown. That is a licence obligation, not
-decoration.
+The cost is a free API key, held as `VITE_FDC_API_KEY`. That is a real cost and
+it is worth stating plainly: the key is baked into the client bundle at build
+time and is readable by anyone who opens the page. It is a read-only key for
+public-domain data and costs nothing, but it is not a secret and must never be
+treated as one.
+
+The data is public domain, so unlike Open Food Facts there is no attribution
+obligation. The sheet still names the source, as a matter of honesty rather
+than licence.
 
 When the network is down, rate-limited, or the athlete is offline, search fails
-quietly with one line saying so. Templates keep working, because a template
-carries its own macros and never needs the API.
+quietly with one line saying so. A missing API key is reported as its own
+message, because "no key configured" and "service unreachable" need different
+actions. Templates keep working either way, because a template carries its own
+macros and never needs the API.
 
 ## The surfaces
 
