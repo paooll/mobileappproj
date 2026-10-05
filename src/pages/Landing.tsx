@@ -1,7 +1,17 @@
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Barbell, Timer, ChartLine, Brain } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  Barbell,
+  Timer,
+  ChartLine,
+  Brain,
+  BowlFood,
+  UsersThree,
+  Ranking,
+} from "@phosphor-icons/react";
 import ThemeToggle from "../components/ThemeToggle";
+import { RANKS } from "../lib/ranks";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -42,7 +52,7 @@ function AppPreview() {
               className="flex items-center justify-between rounded-[10px] px-3 py-2"
               style={{ background: "var(--fill)" }}
             >
-              <span className="num text-[12px] text-[var(--ink-3)]">{n}</span>
+              <span className="num text-[12px] text-[var(--ink-2)]">{n}</span>
               <span className="num text-[14px] font-semibold">{v}</span>
               <span className="w-3" />
             </div>
@@ -60,29 +70,104 @@ function AppPreview() {
 }
 
 /**
- * An editorial index rather than a grid of identical cards. Each row is a real
- * feature of the shipped app, separated by rules instead of boxed.
+ * The ladder the app actually awards, imported rather than retyped so the page
+ * cannot drift from the tiers in `ranks.ts`. Held tiers are filled, the rest are
+ * drawn as the empty rungs they are until you reach them, because that is what
+ * the board in the app looks like on day one.
  */
-const FEATURES = [
+function RankLadder() {
+  // Where a real beginner lands. Chosen to be true rather than flattering.
+  const held = 3;
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <Ranking size={20} weight="bold" className="text-[var(--ink-2)]" />
+        <p className="text-[15px] font-semibold">Every compound lift earns a tier</p>
+      </div>
+      <ol className="mt-4 flex flex-wrap gap-1.5">
+        {RANKS.map((r, i) => (
+          <li key={r.name}>
+            <span
+              className="rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+              style={
+                i < held
+                  ? { background: "var(--ink)", color: "var(--bg)" }
+                  : { background: "var(--fill)", color: "var(--ink-2)" }
+              }
+            >
+              {r.name}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 max-w-[46ch] text-[14px] leading-relaxed text-[var(--ink-2)]">
+        Estimated one rep max decides the tier, per lift, so the climb is yours
+        rather than a badge for showing up.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Grouped by when the feature is actually used, because a flat run of six
+ * identical icon-title-body rows is a list rather than a page: it tells the
+ * visitor nothing about which part of their week a thing belongs to.
+ *
+ * Every entry is checked against the source before it is claimed. The nutrition
+ * group exists because the protein target is a real per-goal figure in
+ * `nutrition.ts`, not because food tracking sounds like a fitness app. The
+ * social group exists because the feed, the follow requests and the reactions
+ * are shipped. An earlier draft sold a solo logger while the app had quietly
+ * become a social one.
+ */
+const GROUPS = [
   {
-    icon: Barbell,
-    title: "A coach that reads your history",
-    body: "Before every set it tells you what you lifted last time, and by how much to go up. No guessing from memory between sets.",
+    heading: "Under the bar",
+    note: "The two things you need mid-session, when your hands are busy and nobody is thinking.",
+    items: [
+      {
+        icon: Barbell,
+        title: "A coach that reads your history",
+        body: "Before every set it tells you what you lifted last time, and by how much to go up, rounded to a jump your equipment can actually make.",
+      },
+      {
+        icon: Timer,
+        title: "Rest that starts itself",
+        body: "The timer begins the moment a set is logged and keeps counting if you leave the workout. You never come back wondering how long is left.",
+      },
+    ],
   },
   {
-    icon: Timer,
-    title: "Rest that starts itself",
-    body: "The timer begins the moment a set is logged and tells you when it is over. You never stand there wondering how long is left.",
+    heading: "Afterwards",
+    note: "What the log adds up to once the session is over.",
+    items: [
+      {
+        icon: ChartLine,
+        title: "Progress you can point at",
+        body: "Estimated one rep max per lift, drawn against every session since you started.",
+      },
+      {
+        icon: Brain,
+        title: "Ask it about your own training",
+        body: "What you trained last week, when a lift stalled, and whether the numbers behind that stall say fatigue or too little frequency.",
+      },
+    ],
   },
   {
-    icon: ChartLine,
-    title: "Progress you can actually see",
-    body: "Estimated one rep max per lift, drawn against every session since you started. The line moves for reasons you can point at.",
-  },
-  {
-    icon: Brain,
-    title: "Ask it about your own training",
-    body: "A short answer from your log: what you trained last week, when you plateaued, whether you have been adding weight.",
+    heading: "If you want it",
+    note: "Off by default. A log that only tracks weight works fine on its own.",
+    items: [
+      {
+        icon: BowlFood,
+        title: "Protein from the goal you picked",
+        body: "Log a meal against a target set at setup, searched from a food database that needs no account.",
+      },
+      {
+        icon: UsersThree,
+        title: "Other people, optionally",
+        body: "Share a finished session to the people who follow you, answer the ones who answer back. Leave it off and the log stays private.",
+      },
+    ],
   },
 ];
 
@@ -119,7 +204,10 @@ export default function Landing() {
 
       <main className="mx-auto w-full max-w-3xl px-5">
         <section className="grid min-h-[80dvh] grid-cols-1 items-center gap-12 py-16 md:grid-cols-[1.05fr_1fr] md:py-0">
-          <div className="order-2 md:order-1">
+          {/* Copy leads at every width. With the preview stacked on top, the
+              measured CTA landed at 837px on an 844px phone, which is below the
+              fold by any honest reading. Source order now carries it. */}
+          <div>
             <motion.h1
               {...rise(0)}
               className="text-[42px] font-bold leading-[1.05] tracking-[-0.03em] md:text-[56px]"
@@ -152,25 +240,39 @@ export default function Landing() {
             </motion.div>
           </div>
 
-          <motion.div {...rise(0.12)} className="order-1 md:order-2">
+          <motion.div {...rise(0.12)}>
             <AppPreview />
           </motion.div>
         </section>
 
-        {/* What it does, as an index. Rules carry the separation, not boxes. */}
+        {/* What it does, grouped by when it happens. Rules carry the
+            separation rather than boxes, and the heading carries the weight on
+            its own: no eyebrow above it. */}
         <section className="border-t border-[var(--line)]">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <div
-              key={title}
-              className="grid grid-cols-[28px_1fr] gap-x-4 gap-y-2 border-b border-[var(--line)] py-8 sm:grid-cols-[28px_15ch_1fr] sm:gap-x-6"
-            >
-              <Icon size={22} weight="bold" className="mt-0.5 text-[var(--ink-2)]" />
-              <h2 className="text-[17px] font-semibold leading-snug sm:col-start-2">
-                {title}
-              </h2>
-              <p className="col-start-2 max-w-[52ch] text-[15px] leading-relaxed text-[var(--ink-2)] sm:col-start-3">
-                {body}
-              </p>
+          <h2 className="sr-only">What Reprange does</h2>
+          {GROUPS.map(({ heading, note, items }) => (
+            <div key={heading} className="border-b border-[var(--line)] py-12 last:border-b-0">
+              <div className="max-w-[46ch]">
+                <h3 className="text-[22px] font-bold leading-tight tracking-[-0.02em]">
+                  {heading}
+                </h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
+                  {note}
+                </p>
+              </div>
+              <div className="mt-7 flex flex-col gap-7">
+                {items.map(({ icon: Icon, title, body }) => (
+                  <div key={title} className="grid grid-cols-[26px_1fr] gap-x-4">
+                    <Icon size={21} weight="bold" className="mt-0.5 text-[var(--ink-2)]" />
+                    <div className="min-w-0">
+                      <h4 className="text-[17px] font-semibold leading-snug">{title}</h4>
+                      <p className="mt-1.5 max-w-[52ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
+                        {body}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </section>
@@ -178,9 +280,9 @@ export default function Landing() {
         <section className="border-t border-[var(--line)] py-16">
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             {[
-              ["876", "exercises ready, with instructions"],
-              ["Two taps", "to log a set"],
-              ["One screen", "to see where you are"],
+              ["876", "exercises, searchable by name or muscle group"],
+              ["Two taps", "from the bar to a logged set"],
+              ["No account", "needed to search the food database"],
             ].map(([head, body]) => (
               <div key={head}>
                 <p className="text-[24px] font-bold tracking-[-0.02em]">{head}</p>
@@ -190,6 +292,9 @@ export default function Landing() {
               </div>
             ))}
           </div>
+          <div className="mt-14 border-t border-[var(--line)] pt-10">
+            <RankLadder />
+          </div>
         </section>
 
         <section className="border-t border-[var(--line)] py-20">
@@ -198,8 +303,8 @@ export default function Landing() {
               Your next session starts now.
             </h2>
             <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
-              Setup takes four questions. Nothing to import, nothing to
-              configure before you can log a set.
+              Setup asks five things, one screen each. Nothing to import,
+              nothing to configure before you can log a set.
             </p>
           </div>
           <div className="mt-8">
@@ -211,7 +316,9 @@ export default function Landing() {
         </section>
 
         <footer className="border-t border-[var(--line)] py-8">
-          <p className="text-center text-[13px] text-[var(--ink-3)]">
+          {/* ink-2, not ink-3: measured on this background ink-3 lands at
+              4.35:1 in light, under the 4.5:1 body-text floor. */}
+          <p className="text-center text-[13px] text-[var(--ink-2)]">
             Reprange · tracks what you lift, nothing else
           </p>
         </footer>
