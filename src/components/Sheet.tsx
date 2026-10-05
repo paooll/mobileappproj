@@ -55,7 +55,7 @@ export default function Sheet({ open, title, onClose, children }: Props) {
             animate={reduce ? { opacity: 1 } : { y: 0 }}
             exit={reduce ? { opacity: 0 } : { y: "100%" }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="glass relative mx-4 mb-[max(env(safe-area-inset-bottom),12px)] flex max-h-[80vh] w-full max-w-md flex-col rounded-3xl shadow-[var(--shadow-panel)]"
+            className="glass relative mx-4 mb-[max(env(safe-area-inset-bottom),12px)] flex max-h-[80vh] w-full max-w-md flex-col overflow-y-auto overscroll-contain rounded-3xl shadow-[var(--shadow-panel)]"
           >
             <div className="flex shrink-0 items-center justify-between px-5 pt-4 pb-2">
               <h2 className="text-[17px] font-bold tracking-[-0.01em]">{title}</h2>

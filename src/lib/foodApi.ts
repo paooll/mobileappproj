@@ -25,7 +25,8 @@ import type { Macros } from "./nutrition";
  * `access-control-allow-origin: *` when the browser sends an `Origin` header,
  * which is the entire reason it is used here. See the ledger.
  */
-export const FDC_CREDIT = "Food data from USDA FoodData Central";
+export const FDC_CREDIT =
+  "Nutrition from USDA FoodData Central. Photos from Open Food Facts.";
 
 const ENDPOINT = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const PAGE_SIZE = 20;
@@ -43,6 +44,10 @@ export interface FoodHit {
   brand: string;
   /** Per 100 g, in grams. Portions divide this down before anything is shown. */
   per100: Macros;
+  /** Barcode, when the entry has one. The only way to find a picture of it. */
+  barcode: string | null;
+  /** Cached picture, once one has been looked up. */
+  imageUrl: string | null;
 }
 
 interface FdcNutrient {
@@ -56,6 +61,8 @@ interface FdcFood {
   description?: string;
   brandOwner?: string;
   brandName?: string;
+  /** Barcode. Only branded entries carry one. */
+  gtinUpc?: string;
   foodNutrients?: FdcNutrient[];
 }
 
@@ -87,6 +94,8 @@ function toHit(f: FdcFood): FoodHit | null {
     label,
     brand: (f.brandOwner || f.brandName || "").trim(),
     per100: macros,
+    barcode: (f.gtinUpc ?? "").trim() || null,
+    imageUrl: null,
   };
 }
 
@@ -108,6 +117,8 @@ export async function cacheFoods(uid: string, hits: FoodHit[]): Promise<void> {
           labelLower: hit.label.toLowerCase(),
           brand: hit.brand,
           per100: hit.per100,
+          barcode: hit.barcode,
+          ...(hit.imageUrl ? { imageUrl: hit.imageUrl } : {}),
         },
         { merge: true },
       ),
@@ -126,9 +137,62 @@ async function cachedFoods(uid: string, term: string): Promise<FoodHit[]> {
     ),
   );
   return snap.docs.map((d) => {
-    const data = d.data() as { label: string; brand: string; per100: Macros };
-    return { id: d.id, label: data.label, brand: data.brand ?? "", per100: data.per100 };
+    const data = d.data() as {
+      label: string;
+      brand: string;
+      per100: Macros;
+      barcode?: string;
+      imageUrl?: string;
+    };
+    return {
+      id: d.id,
+      label: data.label,
+      brand: data.brand ?? "",
+      per100: data.per100,
+      barcode: data.barcode ?? null,
+      imageUrl: data.imageUrl ?? null,
+    };
   });
+}
+
+/**
+ * A picture of the food, keyed on its barcode.
+ *
+ * USDA publishes nutrition but no photographs, so the picture comes from Open
+ * Food Facts' *product* endpoint, which is reachable from a browser (unlike
+ * their search service, which is not) and is looked up by barcode rather than
+ * by name. One request, and only when somebody actually opens a food.
+ *
+ * No barcode, or a generic USDA entry with no matching product, gives no
+ * picture. That is the common case and the UI is built to look deliberate
+ * without one.
+ *
+ * Open Food Facts data is ODbL, so the credit line has to name them too, not
+ * only the nutrition source.
+ */
+const OFF_PRODUCT = "https://world.openfoodfacts.org/api/v2/product";
+
+export async function fetchFoodImage(
+  barcode: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const url = new URL(`${OFF_PRODUCT}/${encodeURIComponent(barcode)}`);
+  url.searchParams.set("fields", "product_name,image_front_small_url,image_front_url,image_small_url");
+  try {
+    const res = await fetch(url.toString(), { signal, headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      product?: { image_front_small_url?: string; image_front_url?: string; image_small_url?: string };
+      status?: number;
+    };
+    if (body.status !== 1 || !body.product) return null;
+    const p = body.product;
+    return p.image_front_small_url || p.image_small_url || p.image_front_url || null;
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    // A missing photograph is a normal outcome, not a failure worth logging.
+    return null;
+  }
 }
 
 /** Retried because a client should survive one dropped connection. */

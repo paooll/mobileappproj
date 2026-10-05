@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MagnifyingGlass, Plus, Trash } from "@phosphor-icons/react";
+import { BowlFood, CaretRight, MagnifyingGlass, Plus, Trash, X } from "@phosphor-icons/react";
 import Sheet from "./Sheet";
 import SegmentedControl from "./SegmentedControl";
 import { useAuthUser } from "../hooks/useAuthUser";
@@ -20,7 +20,7 @@ import {
   type MealItem,
   type MealTemplate,
 } from "../lib/nutrition";
-import { FDC_CREDIT, macrosForPortion, searchFoods, type FoodHit } from "../lib/foodApi";
+import { FDC_CREDIT, cacheFoods, fetchFoodImage, macrosForPortion, searchFoods, type FoodHit } from "../lib/foodApi";
 
 type Tab = "templates" | "search" | "recent";
 
@@ -293,9 +293,38 @@ function SearchTab({
     searching: boolean;
   } | null>(null);
   const [portion, setPortion] = useState<Record<string, number>>({});
+  const [openState, setOpenState] = useState<{ term: string; hit: FoodHit } | null>(null);
+  const [image, setImage] = useState<string | null>(null);
+  const [imagePending, setImagePending] = useState(false);
   const timer = useRef<number | null>(null);
+  const imageTimer = useRef<number | null>(null);
+
+  /**
+   * Opening a food is what fetches its picture, never rendering the list. Twenty
+   * rows of thumbnails would mean twenty requests the moment somebody types,
+   * and most entries have no photograph anyway.
+   */
+  const openFood = (hit: FoodHit) => {
+    setOpenState({ term, hit });
+    setImage(hit.imageUrl);
+    setImagePending(false);
+    if (hit.imageUrl || !hit.barcode) return;
+    const controller = new AbortController();
+    imageTimer.current = window.setTimeout(() => {
+      setImagePending(true);
+      fetchFoodImage(hit.barcode as string, controller.signal)
+        .then((url) => {
+          setImage(url);
+          if (url && uid) cacheFoods(uid, [{ ...hit, imageUrl: url }]).catch(() => undefined);
+        })
+        .finally(() => setImagePending(false));
+    }, 250);
+  };
 
   const term = text.trim();
+  // Keyed to the term, so a new keystroke closes the open food during render
+  // rather than through a setState inside the effect.
+  const open = openState && openState.term === term ? openState.hit : null;
   const shown = result && result.term === term ? result : null;
   const hits = shown?.hits ?? [];
   const offline = shown?.offline ?? false;
@@ -363,72 +392,132 @@ function SearchTab({
       )}
 
       <div className="mt-2">
-        {hits.map((hit) => {
-          const macros = macrosForPortion(hit.per100, gramsFor(hit));
-          return (
-            <div key={hit.id} className="border-b border-[var(--line)] py-3 last:border-b-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[15px] font-medium">{hit.label}</p>
-                  {hit.brand && <p className="truncate text-[13px] text-[var(--ink-3)]">{hit.brand}</p>}
-                </div>
-                <button
-                  onClick={() =>
-                    onLog(hit.label, [
-                      { label: hit.label, grams: gramsFor(hit), macros },
-                    ])
-                  }
-                  disabled={busy}
-                  aria-label={`Log ${hit.label}`}
-                  className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-50"
-                  style={{ background: "var(--food-dim)", color: "var(--food)" }}
-                >
-                  <Plus size={16} weight="bold" />
-                </button>
+        {open && (
+          <div
+            className="mt-3 rounded-2xl p-3"
+            style={{ background: "var(--food-dim)" }}
+          >
+            <div className="flex gap-3">
+              <div
+                className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+                style={{ background: "var(--surface)" }}
+              >
+                {image ? (
+                  <img
+                    src={image}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                    onError={() => setImage(null)}
+                  />
+                ) : (
+                  <span
+                    className="px-2 text-center text-[11px] leading-tight"
+                    style={{ color: "var(--ink-3)" }}
+                  >
+                    {imagePending ? "…" : "No photo"}
+                  </span>
+                )}
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={() =>
-                    setPortion((p) => ({
-                      ...p,
-                      [hit.id]: Math.max(
-                        PORTION_STEP[unit],
-                        gramsFor(hit) - foodFromDisplay(PORTION_STEP[unit], unit),
-                      ),
-                    }))
-                  }
-                  aria-label={`Smaller portion of ${hit.label}`}
-                  className="tab h-11 w-11 shrink-0 rounded-full text-[var(--ink-2)]"
-                  style={{ background: "var(--fill)" }}
-                >
-                  −
-                </button>
-                <span className="text-[14px] font-semibold">
-                  {formatFood(gramsFor(hit), unit)}
-                </span>
-                <button
-                  onClick={() =>
-                    setPortion((p) => ({
-                      ...p,
-                      [hit.id]: gramsFor(hit) + foodFromDisplay(PORTION_STEP[unit], unit),
-                    }))
-                  }
-                  aria-label={`Larger portion of ${hit.label}`}
-                  className="tab h-11 w-11 shrink-0 rounded-full text-[var(--ink-2)]"
-                  style={{ background: "var(--fill)" }}
-                >
-                  +
-                </button>
-                <span className="ml-auto truncate text-[13px] text-[var(--ink-2)]">
-                  {formatFood(macros.protein, unit)} protein
-                </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold">{open.label}</p>
+                {open.brand && (
+                  <p className="truncate text-[13px] text-[var(--ink-2)]">{open.brand}</p>
+                )}
+                <p className="mt-1 text-[13px]" style={{ color: "var(--food)" }}>
+                  {formatFood(open.per100.protein, unit)} protein per 100 g
+                </p>
               </div>
+              <button
+                onClick={() => setOpenState(null)}
+                aria-label="Close"
+                className="tab -mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                style={{ color: "var(--ink-2)" }}
+              >
+                <X size={16} />
+              </button>
             </div>
-          );
-        })}
+
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={() =>
+                  setPortion((p) => ({
+                    ...p,
+                    [open.id]: Math.max(
+                      PORTION_STEP[unit],
+                      gramsFor(open) - foodFromDisplay(PORTION_STEP[unit], unit),
+                    ),
+                  }))
+                }
+                aria-label="Smaller portion"
+                className="tab h-11 w-11 shrink-0 rounded-full"
+                style={{ background: "var(--surface)" }}
+              >
+                −
+              </button>
+              <span className="text-[15px] font-semibold">{formatFood(gramsFor(open), unit)}</span>
+              <button
+                onClick={() =>
+                  setPortion((p) => ({
+                    ...p,
+                    [open.id]: gramsFor(open) + foodFromDisplay(PORTION_STEP[unit], unit),
+                  }))
+                }
+                aria-label="Larger portion"
+                className="tab h-11 w-11 shrink-0 rounded-full"
+                style={{ background: "var(--surface)" }}
+              >
+                +
+              </button>
+              <button
+                onClick={() => {
+                  const macros = macrosForPortion(open.per100, gramsFor(open));
+                  onLog(open.label, [{ label: open.label, grams: gramsFor(open), macros }]);
+                  setOpenState(null);
+                }}
+                disabled={busy}
+                className="btn-solid ml-auto flex min-h-[44px] shrink-0 items-center gap-1.5 px-4 disabled:opacity-50"
+              >
+                <Plus size={16} weight="bold" />
+                Log
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hits.map((hit) => (
+          <button
+            key={hit.id}
+            onClick={() => openFood(hit)}
+            className="tab flex min-h-[56px] w-full items-center gap-3 border-b border-[var(--line)] py-2.5 text-left last:border-b-0"
+          >
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg"
+              style={{ background: "var(--food-dim)", color: "var(--food)" }}
+            >
+              {hit.imageUrl ? (
+                <img
+                  src={hit.imageUrl}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <BowlFood size={16} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-medium">{hit.label}</span>
+              <span className="block truncate text-[13px] text-[var(--ink-2)]">
+                {hit.brand || `${formatFood(hit.per100.protein, unit)} protein per 100 g`}
+              </span>
+            </span>
+            <CaretRight size={15} className="shrink-0 text-[var(--ink-3)]" />
+          </button>
+        ))}
       </div>
 
-      <p className="mt-5 text-[12px] text-[var(--ink-3)]">{FDC_CREDIT}</p>
+      <p className="mt-5 text-[12px] leading-relaxed text-[var(--ink-3)]">{FDC_CREDIT}</p>
     </div>
   );
 }
