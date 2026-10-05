@@ -2,7 +2,7 @@
 
 ## The rule
 
-**Consult the relevant skills in `.agent/skills/` before you build or change
+**Consult the relevant skills in `.claude/skills/` before you build or change
 anything in this app.** Not after, not when stuck — before. Read the skill's
 `SKILL.md` first, then follow it.
 
