@@ -18,6 +18,9 @@ import ThemeToggle from "../components/ThemeToggle";
 import ChipRow from "../components/ChipRow";
 import TrendChart from "../components/TrendChart";
 import BarChart from "../components/BarChart";
+import MuscleHeatmap from "../components/MuscleHeatmap";
+import { calculateMuscleHeat } from "../lib/muscleHeatmap";
+import { loadExercises, type Exercise } from "../lib/data";
 
 export default function Progress() {
   const user = useAuthUser();
@@ -31,10 +34,14 @@ export default function Progress() {
   const [lift, setLift] = useState<string>("");
   const [point, setPoint] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+    loadExercises().then((ex) => {
+      if (!cancelled) setExercises(ex);
+    });
     loadArchive(user.uid)
       .then(({ workouts: w, setsByWorkout: s }) => {
         if (cancelled) return;
@@ -207,6 +214,11 @@ export default function Progress() {
                   ? "Tap the chart for the set behind a point."
                   : ""}
             </p>
+          </div>
+
+          {/* Muscle Heatmap */}
+          <div className="mt-8 mb-3">
+            <MuscleHeatmap data={calculateMuscleHeat(workouts, setsByWorkout, exercises)} />
           </div>
 
           {/* Weekly volume */}
