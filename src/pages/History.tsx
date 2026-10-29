@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Trash } from "@phosphor-icons/react";
+import { Trash, ShareNetwork } from "@phosphor-icons/react";
+import ShareCardModal from "../components/ShareCardModal";
+import type { ShareCardData } from "../lib/shareCard";
 import ConfirmSheet from "../components/ConfirmSheet";
 import {
   subscribeWorkouts,
@@ -23,6 +25,7 @@ export default function History() {
   const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Workout | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shareData, setShareData] = useState<ShareCardData | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [unit] = useUnit();
@@ -152,6 +155,23 @@ export default function History() {
                   </p>
                 </button>
                 <button
+                  onClick={() => {
+                    const vol = setsVolume.get(w.id);
+                    const volText = vol ? formatVolume(vol, unit) : null;
+                    setShareData({
+                      workoutName: w.name,
+                      date: friendlyDate(w.date),
+                      setsCount: setsCount.get(w.id) ?? 0,
+                      volumeText: volText ? `${volText.value} ${volText.suffix}` : "0 kg",
+                      topExercises: [w.name],
+                    });
+                  }}
+                  className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] hover:text-[var(--ink)]"
+                  aria-label={`Share ${w.name}`}
+                >
+                  <ShareNetwork size={16} />
+                </button>
+                <button
                   onClick={() => setPendingDelete(w)}
                   className="tab flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors active:bg-[var(--fill)] active:text-[var(--danger)]"
                   aria-label={`Delete ${w.name}`}
@@ -173,6 +193,9 @@ export default function History() {
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
+      {shareData && (
+        <ShareCardModal data={shareData} onClose={() => setShareData(null)} />
+      )}
     </div>
   );
 }
