@@ -26,6 +26,7 @@ import { clampReps, loadStep, quickReps, snapWeight } from "../lib/setEntry";
 import { createMilestone, createPost } from "../lib/social";
 import { rankUpsFor } from "../lib/ranks";
 import { setHapticsEnabled, tick } from "../lib/haptics";
+import { playRestDoneSound, notifyRestDone, requestNotificationPermission } from "../lib/sound";
 import type { UserProfile } from "../lib/profile";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useToast } from "../components/Toast";
@@ -140,6 +141,8 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const onRestDone = useCallback(() => {
     // A buzz plus a toast, because the screen may be face down mid set
     tick([180, 90, 180]);
+    playRestDoneSound();
+    notifyRestDone();
     toast("Rest over. Next set when you're ready.", "success");
   }, [toast]);
 
@@ -232,6 +235,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   const readOnly = !!workout?.completed;
 
   const startRest = (context: string) => {
+    requestNotificationPermission().catch(() => {});
     setRestFrom(context);
     timer.start();
   };
