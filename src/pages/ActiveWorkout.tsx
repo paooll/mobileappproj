@@ -37,6 +37,8 @@ import Stepper from "../components/Stepper";
 import RestTimerStrip from "../components/RestTimer";
 import ExerciseDetail from "../components/ExerciseDetail";
 import ExercisePicker from "../components/ExercisePicker";
+import PlateCalculatorModal from "../components/PlateCalculatorModal";
+import { Barbell } from "@phosphor-icons/react";
 import { fromDisplay, toDisplay, useUnit } from "../lib/units";
 import { friendlyDate } from "../lib/progress";
 
@@ -73,6 +75,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
   // Keyed by uid so a sign-out or account switch shows the loading state again
   const [loaded, setLoaded] = useState<{ uid: string; archive: RecentArchive | null } | null>(null);
   const [coachHidden, setCoachHidden] = useState(false);
+  const [showPlates, setShowPlates] = useState(false);
   // The athlete can turn the coach off for good, not just this session
   const coachOff = coachHidden || !profile.coach;
   const [rest, setRest] = useState<RestSettings>(DEFAULT_REST);
@@ -576,6 +579,18 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
+                <div className="relative">
+                  {selected && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPlates(true)}
+                      title="Plate Calculator"
+                      aria-label="Calculate plates"
+                      className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--surface)] text-[var(--ink-2)] shadow-sm hover:text-[var(--ink)]"
+                    >
+                      <Barbell size={15} weight="bold" />
+                    </button>
+                  )}
                 <Stepper
                   label="Weight"
                   value={toDisplay(weightKg, unit)}
@@ -586,6 +601,7 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
                   suffix={unit}
                   disabled={!selected}
                 />
+                </div>
                 <Stepper
                   label="Reps"
                   value={repsCount}
@@ -643,6 +659,13 @@ export default function ActiveWorkout({ profile }: { profile: UserProfile }) {
 
       <AnimatePresence>
         {detailEx && <ExerciseDetail exercise={detailEx} onClose={() => setDetailEx(null)} />}
+        {showPlates && (
+          <PlateCalculatorModal
+            targetWeight={toDisplay(weightKg, unit)}
+            unit={unit}
+            onClose={() => setShowPlates(false)}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
